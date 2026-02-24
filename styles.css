@@ -1,0 +1,498 @@
+/* Genetic Evolution Simulator – compact layout for one laptop viewport */
+:root {
+  --bg: #1a1b1e;
+  --surface: #25262b;
+  --border: #373a40;
+  --text: #e8e9ed;
+  --text-muted: #9a9ca5;
+  --accent: #4dabf7;
+  --accent-hover: #74c0fc;
+  --success: #51cf66;
+  --danger: #ff6b6b;
+  --radius: 6px;
+  --radius-sm: 4px;
+  --space: 0.4rem;
+  --space-md: 0.6rem;
+  --space-lg: 0.75rem;
+  --font-sans: "DM Sans", system-ui, sans-serif;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.8125rem;
+  --font-size: 0.9375rem;
+  --font-size-lg: 1.0625rem;
+  --track-height: 6px;
+  --thumb-size: 16px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--font-size);
+  color: var(--text);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Top bar: compact */
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-shrink: 0;
+  padding: var(--space) var(--space-lg);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  margin: 0;
+  margin-right: auto;
+}
+
+.primary-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.control-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space);
+}
+
+.control-group label {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  min-width: 3ch;
+}
+
+.control-group .value {
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  min-width: 2.5ch;
+}
+
+.control-group .slider {
+  width: 70px;
+}
+
+/* App wrap: main + right details drawer */
+.app-wrap {
+  display: flex;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Main content: canvas + charts share space in one row */
+.main-content {
+  display: flex;
+  gap: var(--space-lg);
+  padding: var(--space-md) var(--space-lg);
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  align-items: stretch;
+}
+
+/* Game canvas: fills container */
+.canvas-wrap {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+#canvasParent {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+#canvasParent canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
+/* Charts: take remaining space, split vertically */
+.charts-wrap {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  overflow: hidden;
+}
+
+#chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chart-area {
+  flex: 1 1 0;
+  min-height: 0;
+  position: relative;
+}
+
+.chart-area--population {
+  flex: 1 1 38%;
+  min-height: 80px;
+}
+
+.chart-area--population canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+#geneCharts.chart-area--genes {
+  display: flex;
+  gap: var(--space);
+  flex: 1 1 62%;
+  min-height: 100px;
+}
+
+.chart-area__gene {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+
+.chart-area__gene canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Right details drawer (collapsible) */
+.details-drawer {
+  flex-shrink: 0;
+  width: 280px;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  transition: width 0.2s ease;
+}
+
+.details-drawer--collapsed {
+  width: 48px;
+}
+
+.details-drawer--collapsed .details-drawer__content {
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.details-drawer--collapsed .details-drawer__toggle {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  padding: var(--space-md);
+  height: auto;
+}
+
+.details-drawer__toggle {
+  flex-shrink: 0;
+  padding: var(--space) var(--space-md);
+  font-size: var(--font-size-xs);
+  background: var(--border);
+  color: var(--text-muted);
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.details-drawer__toggle:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.details-drawer__content {
+  flex: 1 1 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--space-md);
+  transition: opacity 0.15s;
+}
+
+.details-drawer__section {
+  margin-bottom: var(--space-lg);
+}
+
+.details-drawer__section:last-child {
+  margin-bottom: 0;
+}
+
+.details-drawer__heading {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 var(--space) 0;
+}
+
+.details-drawer__hint {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  margin: 0 0 var(--space-md) 0;
+  line-height: 1.3;
+}
+
+.param-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space);
+  margin-bottom: var(--space);
+}
+
+.param-label-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  flex-shrink: 0;
+  min-width: 7ch;
+}
+
+.param-row label {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+/* Info icon + tooltip dropdown */
+.info-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: help;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.info-trigger:hover,
+.info-trigger:focus {
+  color: var(--accent);
+}
+
+.info-trigger:focus {
+  outline: none;
+}
+
+.info-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 50%;
+}
+
+.info-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  font-size: 10px;
+  font-style: italic;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.tooltip-dropdown {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  margin-top: 4px;
+  padding: 0.35rem 0.5rem;
+  max-width: 220px;
+  font-size: var(--font-size-xs);
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  white-space: normal;
+  z-index: 100;
+  display: none;
+  pointer-events: none;
+}
+
+.info-trigger:hover .tooltip-dropdown,
+.info-trigger:focus .tooltip-dropdown {
+  display: block;
+}
+
+.inspector-dl .info-trigger {
+  margin-left: 0.15rem;
+}
+
+.param-row .value {
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+  width: 4ch;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.param-row input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Inspector (below params in details drawer) */
+.details-drawer__section--inspector {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-lg);
+  margin-top: var(--space);
+}
+
+.inspector-content {
+  font-size: var(--font-size-sm);
+  min-height: 2.5rem;
+}
+
+.inspector-placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 0;
+}
+
+.inspector-dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 1rem;
+}
+
+.inspector-dl dt {
+  margin: 0;
+  color: var(--text-muted);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+}
+
+.inspector-dl dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Buttons */
+button,
+.btn {
+  font: inherit;
+  font-size: var(--font-size-sm);
+  padding: var(--space) var(--space-md);
+  border-radius: var(--radius-sm);
+  border: none;
+  cursor: pointer;
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 500;
+  transition: background 0.15s;
+}
+
+button:hover,
+.btn:hover {
+  background: var(--accent-hover);
+}
+
+button:focus-visible,
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Sliders */
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: var(--track-height);
+  background: var(--border);
+  border-radius: 999px;
+  outline: none;
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: var(--thumb-size);
+  height: var(--thumb-size);
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.slider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+}
+
+.slider::-moz-range-thumb {
+  width: var(--thumb-size);
+  height: var(--thumb-size);
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: none;
+}
+
+.slider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Touch-friendly hit area on small screens */
+@media (max-width: 600px) {
+  :root {
+    --thumb-size: 24px;
+    --track-height: 10px;
+  }
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .main-content {
+    flex-direction: column;
+  }
+
+  #geneCharts {
+    flex-direction: column;
+  }
+}
