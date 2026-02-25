@@ -20,7 +20,12 @@ Under the hood: a browser-based predator–prey evolution simulation. Each bloid
   5. **💀 Death** – Agents with HP ≤ 0 are removed. If the population ever hits zero, the sim restarts with **initialPopulation** new random agents.
 
 
-**🖱️ Hover** over an individual on the canvas to highlight it (white border) and see its genes, HP, raycast detections, and behaviour network in the **Inspector** panel (right drawer, below Parameters). The charts show population over time and the evolution of each gene (average, min, max).
+**🖱️ Hover** over an individual on the canvas to highlight it (white border) and see its genes, HP, raycast detections, and behaviour network in the **Inspector** panel (right drawer, below Parameters). 
+
+- **Raycast visualization:** Each of the 8 rays detected by the hovered agent is shown with a bar indicating detection type (empty/wall/agent) and raw distance. Detection bars with no nearby object appear greyed out with reduced opacity for clarity.
+- **Behaviour network:** The hovered agent's NEAT neural network is visualized using professional graph layout, showing input nodes (left), hidden neurons (middle), and output nodes (right), color-coded by activation type.
+
+The charts show population over time and the evolution of each gene (average, min, max).
 
 ---
 
@@ -160,8 +165,44 @@ Without COOP/COEP (e.g. generic static server), `SharedArrayBuffer` is not avail
 - **js/raycast.js** – Raycast system: 8 rays, Empty/Wall/Agent detection, optimized with spatial index.
 - **js/behaviour-network.js** – NEAT behaviour policy: create network, inherit+mutation, raycast-to-input, activate for movement.
 - **js/spatial-hash.js** – Spatial hash for broad-phase collision and raycast queries.
+- **js/graph-renderer.js** – Custom neural network visualization renderer using D3.js v7 force layout with Longest Path Layering (Sugiyama algorithm). Displays network structure with professional hierarchical layer assignment: input nodes (left vertical layer), hidden nodes (middle dynamic "soup" with intelligent positioning), and output nodes (right vertical layer). Uses 20+ distinct, vibrant colors for different activation function types.
 
-📦 Dependencies (CDN): PixiJS, Chart.js, Luxon, chartjs-adapter-luxon, chartjs-plugin-streaming, neataptic, D3.js, WebCola. Simulation worker uses `js/math-utils.js`, `js/raycast.js`, `js/behaviour-network.js` via `importScripts`. When run via `node server.js`, SharedArrayBuffer is used for zero-copy state transfer between worker and main thread. **Note:** When using SharedArrayBuffer mode, the Inspector does not show raycast detections or network visualization (fixed SAB layout); use postMessage mode (e.g. `npx serve .`) to see full Inspector data.
+📦 Dependencies (CDN): PixiJS, Chart.js, Luxon, chartjs-adapter-luxon, chartjs-plugin-streaming, neataptic, D3.js v7. Simulation worker uses `js/math-utils.js`, `js/raycast.js`, `js/behaviour-network.js` via `importScripts`. When run via `node server.js`, SharedArrayBuffer is used for zero-copy state transfer between worker and main thread. **Note:** When using SharedArrayBuffer mode, the Inspector does not show raycast detections or full network visualization (fixed SAB layout); use postMessage mode (e.g. `npx serve .`) to see full Inspector data with detailed network graphs.
+
+### Neural Network Visualization
+
+The Inspector panel displays the behaviour network using a **professional graph layout algorithm** (Longest Path Layering / Sugiyama method):
+
+- **Layer Assignment:** Nodes are automatically organized into layers based on longest path distance from input nodes. This creates a clean hierarchical representation of the network structure.
+- **Three-Zone Layout:**
+  - **Input layer (left, 15%):** All INPUT neurons fixed as a vertical line
+  - **Hidden layer (middle, 15-85%):** Hidden neurons positioned by force-directed layout within layer constraints
+  - **Output layer (right, 85%):** OUTPUT neurons fixed as a vertical line
+- **Visual Encoding:**
+  - Node colors: Distinct colors per activation function type (RELU, TANH, LOGISTIC, SIGMOID, etc.)
+  - Node labels: Neuron type displayed below each node
+  - Edge strength: Link stroke width and opacity scaled by connection weight magnitude
+  - Edge direction: Blue for positive weights, red for negative weights
+  - Node indices: Display IDs inside circles for reference
+- **Interactivity:** Hover tooltips show activation value, bias, layer assignment, and connection details
+- **Force Layout:** D3 v7 uses adaptive forces based on layer topology, avoiding edge crossings while maintaining readability
+
+#### Network Color Palette
+
+Neuron activation types are color-coded for quick visual identification:
+
+| Type | Color | Type | Color |
+|------|-------|------|-------|
+| INPUT | Bright blue | LOGISTIC | Vibrant orange |
+| OUTPUT | Bright red | TANH | Bright yellow |
+| RELU | Bright green | IDENTITY | Vibrant purple |
+| SOFTSIGN | Vibrant teal | SINUSOID | Light purple |
+| GAUSSIAN | Mint green | STEP | Bright lime green |
+| BIPOLAR | Bright cyan | BIPOLAR_SIGMOID | Magenta |
+| HARD_TANH | Hot pink | ABSOLUTE | Deep orange |
+| BENT_IDENTITY | Peach | GATE | Lime yellow-green |
+| CONSTANT | Sky blue | INVERSE | Coral pink |
+| SELU | Indigo blue | DEFAULT | Neutral gray |
 
 ---
 
@@ -170,3 +211,6 @@ Without COOP/COEP (e.g. generic static server), `SharedArrayBuffer` is not avail
 - **Agent gene inspection** – When a raycast detects "Agent", consider allowing the network to receive information about that agent's genes (e.g. size, agility). This could enable richer behaviour (e.g. chase smaller, flee larger).
 - **Raycast distribution and count** – Genes controlling the number of raycasts and their angular distribution, with energy tradeoffs: more rays or wider spread = higher observation cost.
 - **Sexual reproduction** – Combine two parents' neural networks via `Network.crossOver()` for offspring, rather than asexual clone-and-mutate. Would require mate selection and crossover logic.
+- **Network graph analytics** – Add statistics panel showing network metrics: node count per layer, average weight magnitudes, connectivity density, feedback loops (if any).
+- **Edge crossing reduction** – Implement advanced node reordering (e.g. barycenter heuristic) within layers to minimize edge crossings and improve visual clarity.
+- **Zoom and pan** – Add interactive zoom/pan to the network visualization for large networks.

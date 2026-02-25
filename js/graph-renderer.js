@@ -55,7 +55,7 @@
         assignLayersBySugiyama: function (graph) {
             var layers = {};
             var nodeToLayer = {};
-            
+
             // Initialize all nodes with layer -1 (unassigned)
             graph.nodes.forEach(function (d) {
                 nodeToLayer[d.id] = -1;
@@ -68,7 +68,7 @@
                 outgoing[d.id] = [];
                 incoming[d.id] = [];
             });
-            
+
             graph.links.forEach(function (d) {
                 var sourceId = typeof d.source === 'object' ? d.source.id : d.source;
                 var targetId = typeof d.target === 'object' ? d.target.id : d.target;
@@ -87,24 +87,24 @@
             // Propagate layers forward using longest path
             var visited = {};
             var queue = inputs.slice();
-            
+
             while (queue.length > 0) {
                 var node = queue.shift();
                 var nodeId = node.id;
                 var currentLayer = nodeToLayer[nodeId];
-                
+
                 if (!visited[nodeId]) {
                     visited[nodeId] = true;
-                    
+
                     // Visit all outgoing neighbors
                     outgoing[nodeId].forEach(function (targetId) {
                         var targetNode = graph.nodes.find(function (n) { return n.id === targetId; });
                         var newLayer = currentLayer + 1;
-                        
+
                         // Update layer if this is a longer path
                         if (nodeToLayer[targetId] < newLayer) {
                             nodeToLayer[targetId] = newLayer;
-                            
+
                             // Add to layers index
                             if (!layers[newLayer]) layers[newLayer] = [];
                             // Remove from old layer if it was there
@@ -114,7 +114,7 @@
                                 );
                             }
                             layers[newLayer].push(targetNode);
-                            
+
                             // Add to queue to propagate further
                             if (queue.indexOf(targetNode) === -1) {
                                 queue.push(targetNode);
@@ -123,7 +123,7 @@
                     });
                 }
             }
-            
+
             // Assign unvisited/output nodes to their calculated layers
             graph.nodes.forEach(function (d) {
                 if (nodeToLayer[d.id] === -1) {
@@ -171,7 +171,7 @@
             // Calculate x positions for each layer (spread evenly across width)
             var layerPositions = {};
             var layerKeys = Object.keys(layers).map(function (k) { return parseInt(k); }).sort(function (a, b) { return a - b; });
-            
+
             layerKeys.forEach(function (layerIndex, i) {
                 // Spread layers from left (15%) to right (85%)
                 var minX = width * 0.15;
