@@ -157,9 +157,11 @@ function init() {
             canvasEl.addEventListener('mouseleave', window.app._onMouseLeave);
             canvasEl.addEventListener('wheel', function (e) {
                 e.preventDefault();
-                var zoom = Renderer.getZoom();
-                var delta = e.deltaY > 0 ? -0.1 : 0.1;
-                Renderer.setZoom(zoom * (1 + delta));
+                var rect = canvasEl.getBoundingClientRect();
+                var normX = (e.clientX - rect.left) / rect.width;
+                var normY = (e.clientY - rect.top) / rect.height;
+                var direction = e.deltaY > 0 ? -1 : 1;
+                Renderer.setZoomStep(direction, normX, normY);
             }, { passive: false });
         }
 
@@ -173,18 +175,6 @@ function init() {
                 panBtn.classList.toggle('canvas-tool--active', window.app.panMode);
                 panBtn.setAttribute('aria-pressed', window.app.panMode ? 'true' : 'false');
                 canvasEl.style.cursor = window.app.panMode ? 'grab' : '';
-            });
-        }
-        var zoomInBtn = document.getElementById('zoomInBtn');
-        if (zoomInBtn) {
-            zoomInBtn.addEventListener('click', function () {
-                Renderer.setZoom(Renderer.getZoom() * 1.25);
-            });
-        }
-        var zoomOutBtn = document.getElementById('zoomOutBtn');
-        if (zoomOutBtn) {
-            zoomOutBtn.addEventListener('click', function () {
-                Renderer.setZoom(Renderer.getZoom() / 1.25);
             });
         }
     });

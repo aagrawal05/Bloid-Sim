@@ -140,13 +140,14 @@ body {
 }
 
 .canvas-tool {
-  font-size: var(--font-size-xs);
-  padding: 4px 8px;
+  font-size: 1rem;
+  padding: 6px 8px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
+  line-height: 1;
 }
 
 .canvas-tool:hover {
@@ -394,7 +395,8 @@ body {
   top: 100%;
   margin-top: 4px;
   padding: 0.35rem 0.5rem;
-  max-width: 220px;
+  width: max-content;
+  max-width: min(480px, calc(100vw - 2rem));
   font-size: var(--font-size-xs);
   font-weight: 400;
   line-height: 1.35;

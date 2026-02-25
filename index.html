@@ -12,6 +12,8 @@
         href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap"
         rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
     <script src="https://pixijs.download/v7.4.3/pixi.min.js"></script>
     <script src="js/math-utils.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
@@ -59,9 +61,7 @@
             <div class="canvas-wrap">
                 <div class="canvas-tools">
                     <button type="button" id="panBtn" class="canvas-tool" title="Pan mode: drag to move view"
-                        aria-pressed="false">Pan</button>
-                    <button type="button" id="zoomInBtn" class="canvas-tool" title="Zoom in">+</button>
-                    <button type="button" id="zoomOutBtn" class="canvas-tool" title="Zoom out">−</button>
+                        aria-label="Pan mode" aria-pressed="false"><i class="fa-solid fa-hand" aria-hidden="true"></i></button>
                 </div>
                 <div id="canvasParent"></div>
                 <div id="minimapContainer" class="minimap-container"></div>

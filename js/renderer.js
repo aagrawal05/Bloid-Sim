@@ -15,8 +15,13 @@ var Renderer = (function () {
     var viewportX = 0;
     var viewportY = 0;
     var zoomLevel = 1;
+    var targetZoom = 1;
+    var targetViewportX = 0;
+    var targetViewportY = 0;
     var mapWidth = 3200;
     var mapHeight = 2400;
+    var zoomLerpSpeed = 0.18;
+    var ZOOM_LEVELS = [0.25, 0.35, 0.5, 0.71, 1, 1.41, 2, 2.83, 4];
 
     function rgbToHex(r, g, b) {
         r = Math.max(0, Math.min(255, Math.round(r)));
@@ -28,27 +33,34 @@ var Renderer = (function () {
     function drawGrid() {
         if (!gridGraphics || !worldContainer) return;
         gridGraphics.clear();
-        var spacing = 100;
+        var minorCell = 100;
+        var majorCell = 500;
         var lineColor = 0x444444;
         var lineAlpha = 0.5;
-        gridGraphics.lineStyle(1, lineColor, lineAlpha);
         var cw = app.renderer.width;
         var ch = app.renderer.height;
         var visW = cw / zoomLevel;
         var visH = ch / zoomLevel;
-        var startX = Math.floor(viewportX / spacing) * spacing;
-        var startY = Math.floor(viewportY / spacing) * spacing;
-        var endX = Math.min(mapWidth, viewportX + visW + spacing);
-        var endY = Math.min(mapHeight, viewportY + visH + spacing);
-        var x;
-        var y;
-        for (x = startX; x <= endX; x += spacing) {
-            gridGraphics.moveTo(x, startY);
-            gridGraphics.lineTo(x, endY);
+        var startX = Math.floor(viewportX / minorCell) * minorCell;
+        var startY = Math.floor(viewportY / minorCell) * minorCell;
+        var endX = Math.min(mapWidth, viewportX + visW + minorCell);
+        var endY = Math.min(mapHeight, viewportY + visH + minorCell);
+
+        var minorLineWidth = Math.max(0.5, 1 / zoomLevel);
+        var majorLineWidth = Math.max(1, 2.5 / zoomLevel);
+
+        gridGraphics.lineStyle(minorLineWidth, lineColor, lineAlpha);
+        for (var x = startX; x < endX; x += minorCell) {
+            for (var y = startY; y < endY; y += minorCell) {
+                gridGraphics.drawRect(x, y, minorCell, minorCell);
+            }
         }
-        for (y = startY; y <= endY; y += spacing) {
-            gridGraphics.moveTo(startX, y);
-            gridGraphics.lineTo(endX, y);
+
+        gridGraphics.lineStyle(majorLineWidth, lineColor, Math.min(1, lineAlpha + 0.2));
+        for (var x = Math.floor(viewportX / majorCell) * majorCell; x < endX; x += majorCell) {
+            for (var y = Math.floor(viewportY / majorCell) * majorCell; y < endY; y += majorCell) {
+                gridGraphics.drawRect(x, y, majorCell, majorCell);
+            }
         }
         gridGraphics.lineStyle(0);
     }
@@ -74,8 +86,25 @@ var Renderer = (function () {
         }
     }
 
+    function findNearestZoomIndex(z) {
+        var best = 0;
+        var bestDiff = Infinity;
+        for (var i = 0; i < ZOOM_LEVELS.length; i++) {
+            var d = Math.abs(ZOOM_LEVELS[i] - z);
+            if (d < bestDiff) { bestDiff = d; best = i; }
+        }
+        return best;
+    }
+
     function updateCamera() {
-        if (!worldContainer) return;
+        if (!worldContainer || !app) return;
+        zoomLevel += (targetZoom - zoomLevel) * zoomLerpSpeed;
+        if (Math.abs(zoomLevel - targetZoom) < 0.001) zoomLevel = targetZoom;
+        viewportX += (targetViewportX - viewportX) * zoomLerpSpeed;
+        viewportY += (targetViewportY - viewportY) * zoomLerpSpeed;
+        if (Math.abs(viewportX - targetViewportX) < 0.5) viewportX = targetViewportX;
+        if (Math.abs(viewportY - targetViewportY) < 0.5) viewportY = targetViewportY;
+        clampViewport();
         worldContainer.x = -viewportX * zoomLevel;
         worldContainer.y = -viewportY * zoomLevel;
         worldContainer.scale.set(zoomLevel);
@@ -170,9 +199,11 @@ var Renderer = (function () {
         },
 
         setViewport: function (x, y) {
-            viewportX = x;
-            viewportY = y;
+            viewportX = targetViewportX = x;
+            viewportY = targetViewportY = y;
             clampViewport();
+            targetViewportX = viewportX;
+            targetViewportY = viewportY;
         },
 
         getViewport: function () {
@@ -180,8 +211,28 @@ var Renderer = (function () {
         },
 
         setZoom: function (level) {
-            zoomLevel = Math.max(0.25, Math.min(4, level));
-            clampViewport();
+            var z = Math.max(0.25, Math.min(4, level));
+            targetZoom = z;
+            targetViewportX = viewportX;
+            targetViewportY = viewportY;
+        },
+
+        setZoomStep: function (direction, normX, normY) {
+            var idx = findNearestZoomIndex(zoomLevel);
+            idx = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, idx + direction));
+            var newZoom = ZOOM_LEVELS[idx];
+            var cw = app ? app.renderer.width : 0;
+            var ch = app ? app.renderer.height : 0;
+            if (cw > 0 && ch > 0 && typeof normX === 'number' && typeof normY === 'number') {
+                var wx = viewportX + normX * (cw / zoomLevel);
+                var wy = viewportY + normY * (ch / zoomLevel);
+                targetViewportX = wx - normX * (cw / newZoom);
+                targetViewportY = wy - normY * (ch / newZoom);
+            } else {
+                targetViewportX = viewportX;
+                targetViewportY = viewportY;
+            }
+            targetZoom = newZoom;
         },
 
         getZoom: function () {
