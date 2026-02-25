@@ -55,10 +55,21 @@ body {
 }
 
 .app-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   font-size: var(--font-size-lg);
   font-weight: 600;
   margin: 0;
   margin-right: auto;
+}
+
+.app-title .app-logo {
+  display: block;
+  height: 24px;
+  width: 24px;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .primary-controls {

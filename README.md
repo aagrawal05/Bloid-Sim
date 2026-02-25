@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.png" alt="Bloid-Sim logo" width="256" />
+</p>
+
 # 🧬 Bloid-Sim
 
 *Blob-shaped blobs doing blob things.* Watch colorful bloids wobble, chase, munch, and evolve in a 2D arena—survival of the chunkiest, fastest, and wiggliest. Drop in, tweak the sliders, and see who thrives.
@@ -73,24 +77,24 @@ Each agent’s DNA is three numbers in **[0, 1]** (with minimums 0.1, 0.1, 0 for
 
 The app runs simulation and rendering in parallel using a **main thread** (UI, rendering, input) and a **Web Worker** (simulation). State is passed from worker to main via **SharedArrayBuffer** (zero-copy) when COOP/COEP headers are present, or via **postMessage** (structured clone) otherwise.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ MAIN THREAD                                                      │
-│  • PixiJS (WebGL) render loop – draws agents as circles          │
-│  • Mouse hover → inspector                                       │
-│  • Chart.js – population & gene stats                            │
-│  • Sliders → CONFIG                                              │
-│  • Reads state each frame (SAB or onmessage)                     │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ postMessage (tick, init, restart)
-                            │ SharedArrayBuffer (state) or postMessage (state)
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ WEB WORKER                                                       │
-│  • eat → update → reproduce → death                              │
-│  • No DOM, no canvas                                             │
-│  • Writes state to SAB or posts state                            │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+  subgraph main [Main thread]
+    Pixi[PixiJS WebGL render loop]
+    Hover[Mouse hover / inspector]
+    Charts[Chart.js population and gene stats]
+    Sliders[Sliders to CONFIG]
+    ReadState[Read state each frame: SAB or onmessage]
+  end
+  subgraph worker [Web Worker]
+    Eat[eat]
+    Update[update]
+    Reproduce[reproduce]
+    Death[death]
+    Eat --> Update --> Reproduce --> Death
+  end
+  main -->|"postMessage: tick, init, restart"| worker
+  worker -->|"SharedArrayBuffer or postMessage: state"| main
 ```
 
 ### Optimizations
