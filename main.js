@@ -253,63 +253,23 @@ var _inspectorLastHpFrac = null;
 var _inspectorLastHpText = null;
 var _inspectorLastRaycastKey = null;
 var _inspectorNetworkKey = null;
+var _inspectorNetworkJSON = null;
 var _minimapLastVpX = null;
 var _minimapLastVpY = null;
 var _minimapLastZoom = null;
 
 function renderInspectorNetwork(networkJSON) {
     var netWrap = document.getElementById('inspectorNetworkWrap');
-    var netStatus = document.getElementById('inspectorNetworkStatus');
     var netSvg = document.getElementById('inspectorNetwork');
     if (!netWrap || !netSvg) return;
 
-    function clearNetworkSvg() {
-        if (typeof d3 !== 'undefined') {
-            d3.select('#inspectorNetwork').selectAll('*').remove();
-        }
-    }
+    if (!networkJSON) return;
 
-    var hasNeataptic = (typeof neataptic !== 'undefined' && neataptic && neataptic.Network);
-    var hasDrawGraph = (typeof drawGraph === 'function');
-    var isSAB = !!useSAB;
+    var net = neataptic.Network.fromJSON(networkJSON);
+    var graphData = net.graph(100, 100);
 
-    if (!networkJSON) {
-        netWrap.style.display = 'block';
-        clearNetworkSvg();
-        if (netStatus) {
-            if (isSAB) {
-                netStatus.textContent = 'Network visualization is not available in SharedArrayBuffer (performance) mode. Run without COOP/COEP headers to view behaviour networks.';
-            } else {
-                netStatus.textContent = 'No behaviour network data is available yet for this agent.';
-            }
-        }
-        return;
-    }
-
-    if (!hasNeataptic || !hasDrawGraph) {
-        netWrap.style.display = 'block';
-        clearNetworkSvg();
-        if (netStatus) {
-            netStatus.textContent = 'Neural network visualization scripts (neataptic graph + D3/WebCola) did not load, so the behaviour network cannot be drawn.';
-        }
-        return;
-    }
-
-    try {
-        var net = neataptic.Network.fromJSON(networkJSON);
-        var graphData = net.graph(320, 200);
-        clearNetworkSvg();
-        drawGraph(graphData, '#inspectorNetwork');
-        netWrap.style.display = 'block';
-        if (netStatus) netStatus.textContent = '';
-    } catch (e) {
-        netWrap.style.display = 'block';
-        clearNetworkSvg();
-        if (netStatus) {
-            netStatus.textContent = 'An error occurred while rendering the behaviour network for this agent.';
-            console.error('Network rendering error:', e);
-        }
-    }
+    GraphRenderer.draw(graphData, netSvg);
+    netWrap.style.display = 'block';
 }
 
 function updateInspector(individual) {
@@ -425,7 +385,8 @@ function updateInspector(individual) {
                     } else {
                         var fraction = Math.max(0, Math.min(1, r.normDist));
                         var distAbs = Math.round(fraction * maxRange);
-                        cell = '<div class="raycast-bar"><div class="raycast-bar-fill" style="width:' +
+                        var emptyClass = r.type === 0 ? ' raycast-bar--empty' : '';
+                        cell = '<div class="raycast-bar' + emptyClass + '"><div class="raycast-bar-fill" style="width:' +
                             (fraction * 100) + '%"></div><span class="raycast-bar-text">' +
                             distAbs + ' / ' + Math.round(maxRange) + '</span></div>';
                     }

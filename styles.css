@@ -27,7 +27,8 @@
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
   margin: 0;
   height: 100%;
   overflow: hidden;
@@ -512,7 +513,7 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.inspector-dl dt + dd.inspector-raycasts {
+.inspector-dl dt+dd.inspector-raycasts {
   grid-column: 1 / -1;
 }
 
@@ -607,6 +608,14 @@ body {
   background: var(--accent);
 }
 
+.raycast-bar--empty {
+  opacity: 0.4;
+}
+
+.raycast-bar--empty .raycast-bar-fill {
+  background: var(--text-muted);
+}
+
 .raycast-bar-text {
   display: inline-block;
   margin-top: 0.15rem;
@@ -636,9 +645,38 @@ body {
 .inspector-network-svg {
   display: block;
   max-width: 100%;
-  background: var(--bg);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  width: 100%;
+  height: 450px;
+}
+
+.network-link {
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+}
+
+.network-link:hover {
+  opacity: 1;
+}
+
+.network-node {
+  cursor: move;
+  transition: filter 0.2s ease;
+}
+
+.network-node:hover {
+  filter: drop-shadow(0 0 4px rgba(77, 171, 247, 0.6));
+}
+
+.network-label {
+  user-select: none;
+  cursor: move;
 }
 
 /* Buttons */

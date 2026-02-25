@@ -16,10 +16,7 @@
         crossorigin="anonymous" referrerpolicy="no-referrer" />
     <script src="https://pixijs.download/v7.4.3/pixi.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/neataptic/1.4.7/neataptic.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/webcola@3.4.0/WebCola/cola.min.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/wagenaartje/neataptic@master/graph/graph.css" />
-    <script src="js/math-utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/luxon/3.0.1/luxon.min.js"></script>
     <script
@@ -31,7 +28,8 @@
     <script src="js/controls.js"></script>
     <script src="js/renderer.js"></script>
     <script src="js/charts.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/wagenaartje/neataptic@master/graph/graph.js"></script>
+    <script src="js/graph-renderer.js"></script>
+    <script src="js/math-utils.js"></script>
     <script src="main.js"></script>
 </head>
 
@@ -330,7 +328,7 @@
                     <div id="inspectorNetworkWrap" class="inspector-network-wrap" style="display:none;">
                         <h3 class="inspector-network-heading">Behaviour network</h3>
                         <p id="inspectorNetworkStatus" class="inspector-network-status" aria-live="polite"></p>
-                        <svg id="inspectorNetwork" class="inspector-network-svg" width="320" height="200"
+                        <svg id="inspectorNetwork" class="inspector-network-svg" width="100%" height="250px"
                             aria-label="Neural network graph"></svg>
                     </div>
                 </div>
