@@ -67,10 +67,64 @@ Each agent’s DNA is three numbers in **[0, 1]** (with minimums 0.1, 0.1, 0 for
 
 ---
 
+## 🏗️ System architecture
+
+### Overview
+
+The app runs simulation and rendering in parallel using a **main thread** (UI, rendering, input) and a **Web Worker** (simulation). State is passed from worker to main via **SharedArrayBuffer** (zero-copy) when COOP/COEP headers are present, or via **postMessage** (structured clone) otherwise.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ MAIN THREAD                                                      │
+│  • PixiJS (WebGL) render loop – draws agents as circles          │
+│  • Mouse hover → inspector                                       │
+│  • Chart.js – population & gene stats                            │
+│  • Sliders → CONFIG                                              │
+│  • Reads state each frame (SAB or onmessage)                     │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │ postMessage (tick, init, restart)
+                            │ SharedArrayBuffer (state) or postMessage (state)
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ WEB WORKER                                                       │
+│  • eat → update → reproduce → death                              │
+│  • No DOM, no canvas                                             │
+│  • Writes state to SAB or posts state                            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Optimizations
+
+| Optimization | Description |
+|--------------|-------------|
+| **GPU rendering** | PixiJS uses WebGL. Agent circles and hover highlights are drawn with hardware-accelerated batched geometry instead of 2D canvas. |
+| **Simulation on worker** | Simulation runs in a separate thread so it doesn’t block rendering or input. |
+| **SharedArrayBuffer (zero-copy)** | When the page is served with COOP/COEP headers, state is shared in a `SharedArrayBuffer`. The worker writes and the main thread reads directly, avoiding structured-clone copies each tick. |
+| **Double buffering** | Two SAB regions alternate: worker writes to the non-active buffer, then flips `readIndex` with `Atomics.store`. The main thread always reads from the active buffer, avoiding tearing. |
+| **Fixed-timestep simulation** | Simulation ticks run on `setInterval` at `CONFIG.fps`, with `dt = simulationSpeed / fps`, independent of render frame rate. |
+
+### SharedArrayBuffer layout
+
+When SAB is used (`node server.js`):
+
+- **Max agents:** 512  
+- **Bytes per agent:** 44 (11 × Float32)
+- **Layout:** `[readIndex: Int32] [count0: Int32] [data0: 5632 floats] [count1: Int32] [data1: 5632 floats]`
+- **Fields per agent (11 floats):** `x, y, size, r, g, b, a, gene0, gene1, gene2, hp`
+- **Total size:** ~45 KB
+
+The main thread uses `Atomics.load(i32, 0)` to get the active buffer index, reads count and data from that region, and converts to drawable objects for the renderer and charts.
+
+### Fallback
+
+Without COOP/COEP (e.g. generic static server), `SharedArrayBuffer` is not available. The app uses `postMessage` for state instead: the worker posts `{ type: 'state', individuals: [...] }` each tick and the main thread updates render state via `onmessage`.
+
+---
+
 ## 🚀 How to run
 
-1. Open **index.html** in a modern browser, or  
-2. Serve the folder with a static server (e.g. `npx serve .` or `python3 -m http.server 8000`) and open the given URL.
+1. **Recommended (SharedArrayBuffer):** Run `node server.js` and open `http://localhost:8765`. The custom server sets COOP/COEP headers for zero-copy worker–main state transfer.
+2. Otherwise, serve the folder with a static server (e.g. `npx serve .`) and open the URL. The app falls back to `postMessage` when SharedArrayBuffer is unavailable.
 
 ✅ No build step. Scripts: PixiJS (WebGL), Chart.js, Luxon adapters, chartjs-plugin-streaming, then the app modules. Simulation runs in a Web Worker; rendering and UI on the main thread.
 
@@ -83,7 +137,9 @@ Each agent’s DNA is three numbers in **[0, 1]** (with minimums 0.1, 0.1, 0 for
 - **main.js** – Init (PixiJS renderer, simulation worker, charts), restart, hover detection, inspector. No p5; canvas is created in `js/renderer.js`.
 - **js/math-utils.js** – Shared math (TWO_PI, random, vec2, dist) for main and worker.
 - **js/renderer.js** – PixiJS Application, resize, draw loop; draws agents from state and hover highlight.
-- **js/simulation-worker.js** – Web Worker: runs eat/update/reproduce/death; posts state for main thread.
+- **js/simulation-worker.js** – Web Worker: runs eat/update/reproduce/death; writes to SharedArrayBuffer (or posts state via postMessage).
+- **js/sab-layout.js** – SharedArrayBuffer layout constants.
+- **server.js** – Static server with COOP/COEP headers for SharedArrayBuffer.
 - **js/config.js** – Single `CONFIG` object (e.g. `fps`, `simulationSpeed`, `initialPopulation`, `sizeCoefficient`, `hpCoefficient`, `eatCoefficient`, `compareCoefficient`, `costCoefficient`, `speedCoefficient`, `mutationRate`, `reproductionRate`) and `CONSTANTS` (`minSize`, `minSpeed`, `minAngleSpeed`, `canvasWidth`, `canvasHeight`). Sliders write to CONFIG.
 - **js/controls.js** – Binds sliders and Restart button to CONFIG and display.
 - **js/dna.js** – `DNA(inheritedGenes)` (genes, `mutate()`).
@@ -91,4 +147,4 @@ Each agent’s DNA is three numbers in **[0, 1]** (with minimums 0.1, 0.1, 0 for
 - **js/population.js** – `Population(populationSize)` (individuals list, `run(dt)`, `eat(individuals)`).
 - **js/charts.js** – Population and gene charts (size, speed, angular speed). Gene charts use data-driven y-axis scaling.
 
-📦 Dependencies (CDN): PixiJS, Chart.js, Luxon, chartjs-adapter-luxon, chartjs-plugin-streaming. Simulation worker uses `js/math-utils.js` via `importScripts`.
+📦 Dependencies (CDN): PixiJS, Chart.js, Luxon, chartjs-adapter-luxon, chartjs-plugin-streaming. Simulation worker uses `js/math-utils.js` via `importScripts`. When run via `node server.js`, SharedArrayBuffer is used for zero-copy state transfer between worker and main thread.

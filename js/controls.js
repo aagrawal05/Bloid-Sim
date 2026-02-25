@@ -7,7 +7,7 @@
     return document.getElementById(id);
   }
 
-  function bindSlider(inputId, spanId, key, formatter, transform) {
+  function bindSlider(inputId, spanId, key, formatter, transform, onUpdate) {
     var input = get(inputId);
     var span = get(spanId);
     if (!input || !span) return;
@@ -18,6 +18,7 @@
       var value = transform(raw);
       CONFIG[key] = value;
       span.textContent = formatter(value);
+      if (onUpdate) onUpdate(value);
     }
     input.addEventListener('input', update);
     update();
@@ -29,7 +30,9 @@
   }
 
   function init() {
-    bindSlider('Slider', 'fps', 'fps', function (v) { return String(Math.round(v)); });
+    bindSlider('Slider', 'fps', 'fps', function (v) { return String(Math.round(v)); }, undefined, function () {
+      if (window.app && typeof window.app.startSimulationLoop === 'function') window.app.startSimulationLoop();
+    });
     bindSlider('simSlider', 'speed', 'simulationSpeed', function (v) { return (Math.round(v * 10) / 10).toFixed(1) + 'x'; }, simulationSpeedTransform);
     bindSlider('size', 'sizeSpan', 'sizeCoefficient');
     bindSlider('mutation', 'mutationSpan', 'mutationRate');

@@ -1,39 +1,50 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Genetic Evolution Simulator</title>
+    <title>Blob-oid sim</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap"
+        rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.8.0/p5.js"></script>
+    <script src="https://pixijs.download/v7.4.3/pixi.min.js"></script>
+    <script src="js/math-utils.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/luxon/3.0.1/luxon.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-adapter-luxon/1.0.0-beta.1/chartjs-adapter-luxon.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-streaming/2.0.0/chartjs-plugin-streaming.min.js"></script>
+    <script
+        src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-adapter-luxon/1.0.0-beta.1/chartjs-adapter-luxon.min.js"></script>
+    <script
+        src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-streaming/2.0.0/chartjs-plugin-streaming.min.js"></script>
+    <script src="js/sab-layout.js"></script>
     <script src="js/config.js"></script>
     <script src="js/controls.js"></script>
     <script src="js/dna.js"></script>
     <script src="js/individual.js"></script>
     <script src="js/population.js"></script>
+    <script src="js/renderer.js"></script>
     <script src="js/charts.js"></script>
     <script src="main.js"></script>
 </head>
+
 <body>
     <header class="app-header">
-        <h1 class="app-title">Genetic Evolution</h1>
+        <h1 class="app-title">Bloid Sim</h1>
         <div class="primary-controls">
             <div class="control-group">
                 <label for="Slider">FPS</label>
                 <span id="fps" class="value" aria-live="polite"></span>
-                <input type="range" min="1" max="240" value="60" class="slider" id="Slider" aria-label="Frames per second" />
+                <input type="range" min="1" max="240" value="60" class="slider" id="Slider"
+                    aria-label="Frames per second" />
             </div>
             <div class="control-group">
                 <label for="simSlider">Speed</label>
                 <span id="speed" class="value" aria-live="polite"></span>
-                <input type="range" min="0" max="10" step="0.1" value="5" class="slider" id="simSlider" aria-label="Simulation speed" />
+                <input type="range" min="0" max="10" step="0.1" value="5" class="slider" id="simSlider"
+                    aria-label="Simulation speed" />
             </div>
             <button type="button" id="restartBtn">Restart</button>
         </div>
@@ -50,16 +61,20 @@
                         <canvas id="populationChart" aria-label="Population over time"></canvas>
                     </div>
                     <div id="geneCharts" class="chart-area chart-area--genes">
-                        <div class="chart-area__gene"><canvas id="sizeChart" class="geneChart" aria-label="Size gene over time"></canvas></div>
-                        <div class="chart-area__gene"><canvas id="speedChart" class="geneChart" aria-label="Speed gene over time"></canvas></div>
-                        <div class="chart-area__gene"><canvas id="angularSpeedChart" class="geneChart" aria-label="Angular speed gene over time"></canvas></div>
+                        <div class="chart-area__gene"><canvas id="sizeChart" class="geneChart"
+                                aria-label="Size gene over time"></canvas></div>
+                        <div class="chart-area__gene"><canvas id="speedChart" class="geneChart"
+                                aria-label="Speed gene over time"></canvas></div>
+                        <div class="chart-area__gene"><canvas id="angularSpeedChart" class="geneChart"
+                                aria-label="Angular speed gene over time"></canvas></div>
                     </div>
                 </div>
             </div>
         </main>
 
         <aside id="detailsDrawer" class="details-drawer" aria-label="Details">
-            <button type="button" class="details-drawer__toggle" id="detailsDrawerToggle" aria-expanded="true" aria-controls="detailsDrawerContent" title="Hide details panel">Details</button>
+            <button type="button" class="details-drawer__toggle" id="detailsDrawerToggle" aria-expanded="true"
+                aria-controls="detailsDrawerContent" title="Hide details panel">Details</button>
             <div id="detailsDrawerContent" class="details-drawer__content">
                 <div class="details-drawer__section">
                     <h2 class="details-drawer__heading">Genetics & population</h2>
@@ -67,26 +82,43 @@
                     <div class="param-row">
                         <span class="param-label-cell">
                             <label for="mutation">Mutation</label>
-                            <span class="info-trigger" tabindex="0" role="button" aria-label="Mutation rate description"><span class="info-icon" aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Per-gene chance that an offspring gets a new random value in [min, 1]. Higher = more exploration and diversity, faster evolution, but more disruption of good genomes.</span></span>
+                            <span class="info-trigger" tabindex="0" role="button"
+                                aria-label="Mutation rate description"><span class="info-icon"
+                                    aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Per-gene
+                                    chance that an offspring gets a new random value in [min, 1]. Higher = more
+                                    exploration and diversity, faster evolution, but more disruption of good
+                                    genomes.</span></span>
                         </span>
                         <span id="mutationSpan" class="value"></span>
-                        <input type="range" min="0" max="0.5" step="0.01" value="0.1" class="slider" id="mutation" aria-describedby="mutationSpan" />
+                        <input type="range" min="0" max="0.5" step="0.01" value="0.1" class="slider" id="mutation"
+                            aria-describedby="mutationSpan" />
                     </div>
                     <div class="param-row">
                         <span class="param-label-cell">
                             <label for="reproduction">Reproduction</label>
-                            <span class="info-trigger" tabindex="0" role="button" aria-label="Reproduction rate description"><span class="info-icon" aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Per-timestep probability (× dt) that an individual spawns one child. Higher = population grows and evolves faster; too high can cause boom–bust or overcrowding.</span></span>
+                            <span class="info-trigger" tabindex="0" role="button"
+                                aria-label="Reproduction rate description"><span class="info-icon"
+                                    aria-hidden="true">i</span><span class="tooltip-dropdown"
+                                    role="tooltip">Per-timestep probability (× dt) that an individual spawns one child.
+                                    Higher = population grows and evolves faster; too high can cause boom–bust or
+                                    overcrowding.</span></span>
                         </span>
                         <span id="reproductionSpan" class="value"></span>
-                        <input type="range" min="0" max="0.5" step="0.01" value="0.2" class="slider" id="reproduction" aria-describedby="reproductionSpan" />
+                        <input type="range" min="0" max="0.5" step="0.01" value="0.2" class="slider" id="reproduction"
+                            aria-describedby="reproductionSpan" />
                     </div>
                     <div class="param-row">
                         <span class="param-label-cell">
                             <label for="initial">Initial pop.</label>
-                            <span class="info-trigger" tabindex="0" role="button" aria-label="Initial population description"><span class="info-icon" aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Number of agents at start or after Restart. Larger = more diversity and interactions; smaller = easier to watch single lineages.</span></span>
+                            <span class="info-trigger" tabindex="0" role="button"
+                                aria-label="Initial population description"><span class="info-icon"
+                                    aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Number of
+                                    agents at start or after Restart. Larger = more diversity and interactions; smaller
+                                    = easier to watch single lineages.</span></span>
                         </span>
                         <span id="initialSpan" class="value"></span>
-                        <input type="range" min="75" max="250" value="100" class="slider" id="initial" aria-describedby="initialSpan" />
+                        <input type="range" min="75" max="250" value="100" class="slider" id="initial"
+                            aria-describedby="initialSpan" />
                     </div>
                 </div>
                 <div class="details-drawer__section">
@@ -95,50 +127,80 @@
                     <div class="param-row">
                         <span class="param-label-cell">
                             <label for="size">Size</label>
-                            <span class="info-trigger" tabindex="0" role="button" aria-label="Size coefficient description"><span class="info-icon" aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Multiplier for the size gene → display size and (with HP/cost) effective mass. Higher = bigger bodies and more impact of the size gene.</span></span>
+                            <span class="info-trigger" tabindex="0" role="button"
+                                aria-label="Size coefficient description"><span class="info-icon"
+                                    aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Multiplier
+                                    for the size gene → display size and (with HP/cost) effective mass. Higher = bigger
+                                    bodies and more impact of the size gene.</span></span>
                         </span>
                         <span id="sizeSpan" class="value"></span>
-                        <input type="range" min="25" max="75" step="0.05" value="50" class="slider" id="size" aria-describedby="sizeSpan" />
+                        <input type="range" min="25" max="75" step="0.05" value="50" class="slider" id="size"
+                            aria-describedby="sizeSpan" />
                     </div>
                     <div class="param-row">
                         <span class="param-label-cell">
                             <label for="hp">HP</label>
-                            <span class="info-trigger" tabindex="0" role="button" aria-label="HP coefficient description"><span class="info-icon" aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Multiplier for the size gene → starting HP. Higher = agents live longer without eating; lower = faster turnover and stronger pressure to eat.</span></span>
+                            <span class="info-trigger" tabindex="0" role="button"
+                                aria-label="HP coefficient description"><span class="info-icon"
+                                    aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Multiplier
+                                    for the size gene → starting HP. Higher = agents live longer without eating; lower =
+                                    faster turnover and stronger pressure to eat.</span></span>
                         </span>
                         <span id="hpSpan" class="value"></span>
-                        <input type="range" min="75" max="150" step="0.05" value="100" class="slider" id="hp" aria-describedby="hpSpan" />
+                        <input type="range" min="75" max="150" step="0.05" value="100" class="slider" id="hp"
+                            aria-describedby="hpSpan" />
                     </div>
                     <div class="param-row">
                         <span class="param-label-cell">
                             <label for="eat">Eat</label>
-                            <span class="info-trigger" tabindex="0" role="button" aria-label="Eat coefficient description"><span class="info-icon" aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Fraction of prey's HP transferred to the eater. &gt;1 = eating is very rewarding; 1 = one-to-one transfer.</span></span>
+                            <span class="info-trigger" tabindex="0" role="button"
+                                aria-label="Eat coefficient description"><span class="info-icon"
+                                    aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Fraction of
+                                    prey's HP transferred to the eater. &gt;1 = eating is very rewarding; 1 = one-to-one
+                                    transfer.</span></span>
                         </span>
                         <span id="eatSpan" class="value"></span>
-                        <input type="range" min="1" max="2" step="0.05" value="1" class="slider" id="eat" aria-describedby="eatSpan" />
+                        <input type="range" min="1" max="2" step="0.05" value="1" class="slider" id="eat"
+                            aria-describedby="eatSpan" />
                     </div>
                     <div class="param-row">
                         <span class="param-label-cell">
                             <label for="compare">Compare</label>
-                            <span class="info-trigger" tabindex="0" role="button" aria-label="Compare coefficient description"><span class="info-icon" aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Size ratio required to eat: eater must be at least this × prey's size. Higher = stricter hierarchy; lower = more similar-sized predation.</span></span>
+                            <span class="info-trigger" tabindex="0" role="button"
+                                aria-label="Compare coefficient description"><span class="info-icon"
+                                    aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Size ratio
+                                    required to eat: eater must be at least this × prey's size. Higher = stricter
+                                    hierarchy; lower = more similar-sized predation.</span></span>
                         </span>
                         <span id="compareSpan" class="value"></span>
-                        <input type="range" min="1" max="2" step="0.05" value="1.25" class="slider" id="compare" aria-describedby="compareSpan" />
+                        <input type="range" min="1" max="2" step="0.05" value="1.25" class="slider" id="compare"
+                            aria-describedby="compareSpan" />
                     </div>
                     <div class="param-row">
                         <span class="param-label-cell">
                             <label for="cost">Cost</label>
-                            <span class="info-trigger" tabindex="0" role="button" aria-label="Cost coefficient description"><span class="info-icon" aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Metabolic drain per timestep = size_gene × cost × dt. Higher = big agents die faster without food; lower = size is less penalized.</span></span>
+                            <span class="info-trigger" tabindex="0" role="button"
+                                aria-label="Cost coefficient description"><span class="info-icon"
+                                    aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Metabolic
+                                    drain per timestep = size_gene × cost × dt. Higher = big agents die faster without
+                                    food; lower = size is less penalized.</span></span>
                         </span>
                         <span id="costSpan" class="value"></span>
-                        <input type="range" min="10" max="25" step="0.05" value="18.5" class="slider" id="cost" aria-describedby="costSpan" />
+                        <input type="range" min="10" max="25" step="0.05" value="18.5" class="slider" id="cost"
+                            aria-describedby="costSpan" />
                     </div>
                     <div class="param-row">
                         <span class="param-label-cell">
                             <label for="speedC">Speed coef.</label>
-                            <span class="info-trigger" tabindex="0" role="button" aria-label="Speed coefficient description"><span class="info-icon" aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Multiplier for the speed gene → movement speed. Higher = speed gene has more impact; shapes the size–speed tradeoff with cost.</span></span>
+                            <span class="info-trigger" tabindex="0" role="button"
+                                aria-label="Speed coefficient description"><span class="info-icon"
+                                    aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Multiplier
+                                    for the speed gene → movement speed. Higher = speed gene has more impact; shapes the
+                                    size–speed tradeoff with cost.</span></span>
                         </span>
                         <span id="speedCSpan" class="value"></span>
-                        <input type="range" min="450" max="550" value="500" class="slider" id="speedC" aria-describedby="speedCSpan" />
+                        <input type="range" min="450" max="550" value="500" class="slider" id="speedC"
+                            aria-describedby="speedCSpan" />
                     </div>
                 </div>
                 <div class="details-drawer__section details-drawer__section--inspector">
@@ -152,17 +214,18 @@
         </aside>
     </div>
     <script>
-      (function () {
-        var drawer = document.getElementById('detailsDrawer');
-        var toggle = document.getElementById('detailsDrawerToggle');
-        if (drawer && toggle) {
-          toggle.addEventListener('click', function () {
-            var collapsed = drawer.classList.toggle('details-drawer--collapsed');
-            toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-            toggle.title = collapsed ? 'Show details panel' : 'Hide details panel';
-          });
-        }
-      })();
+        (function () {
+            var drawer = document.getElementById('detailsDrawer');
+            var toggle = document.getElementById('detailsDrawerToggle');
+            if (drawer && toggle) {
+                toggle.addEventListener('click', function () {
+                    var collapsed = drawer.classList.toggle('details-drawer--collapsed');
+                    toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+                    toggle.title = collapsed ? 'Show details panel' : 'Hide details panel';
+                });
+            }
+        })();
     </script>
 </body>
+
 </html>

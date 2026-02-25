@@ -1,12 +1,12 @@
 /**
- * Population: list of individuals, run(dt), eat(pop). Depends on Individual, CONFIG, p5.
+ * Population: list of individuals, run(dt), eat(pop). Depends on Individual, CONFIG, math-utils.
  */
 function Population(populationSize) {
     this.individuals = [];
     var canvasWidth = CONSTANTS.canvasWidth;
     var canvasHeight = CONSTANTS.canvasHeight;
     for (var i = 0; i < populationSize; i++) {
-        this.individuals.push(new Individual(createVector(random(canvasWidth), random(canvasHeight))));
+        this.individuals.push(new Individual(vec2(random(canvasWidth), random(canvasHeight))));
     }
 }
 
@@ -27,9 +27,9 @@ Population.prototype.eat = function (individuals) {
     for (var i = individuals.length - 1; i >= 0; i--) {
         for (var j = individuals.length - 1; j >= 0; j--) {
             if (j !== i) {
-                var distance = p5.Vector.dist(individuals[i].position, individuals[j].position);
+                var d = dist(individuals[i].position, individuals[j].position);
                 if (
-                    distance < individuals[i].size / 2 &&
+                    d < individuals[i].size / 2 &&
                     individuals[i].size > individuals[j].size * CONFIG.compareCoefficient
                 ) {
                     individuals[i].hp += Math.floor(individuals[j].hp * CONFIG.eatCoefficient);
