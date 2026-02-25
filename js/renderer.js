@@ -144,11 +144,14 @@ var Renderer = (function () {
         }
     }
 
-    function findNearestZoomIndex(z) {
+    // find the index of the zoom level array element closest to a value
+    // accepts an optional array so callers can provide a custom level list
+    function findNearestZoomIndex(z, levels) {
+        levels = levels || ZOOM_LEVELS;
         var best = 0;
         var bestDiff = Infinity;
-        for (var i = 0; i < ZOOM_LEVELS.length; i++) {
-            var d = Math.abs(ZOOM_LEVELS[i] - z);
+        for (var i = 0; i < levels.length; i++) {
+            var d = Math.abs(levels[i] - z);
             if (d < bestDiff) { bestDiff = d; best = i; }
         }
         return best;
@@ -233,6 +236,18 @@ var Renderer = (function () {
                                 CONSTANTS.canvasWidth = cw;
                                 CONSTANTS.canvasHeight = ch;
                             }
+                            // enforce zoom bound after resize using same calculation as the public method
+                            var computeMinZoomInternal = function () {
+                                if (!app || !app.renderer) return 0.25;
+                                var cw2 = app.renderer.width;
+                                var ch2 = app.renderer.height;
+                                if (mapWidth <= 0 || mapHeight <= 0 || cw2 <= 0 || ch2 <= 0) return 0.25;
+                                return Math.min(1, cw2 / mapWidth, ch2 / mapHeight);
+                            };
+                            var minZ = computeMinZoomInternal();
+                            if (zoomLevel < minZ) {
+                                zoomLevel = targetZoom = minZ;
+                            }
                             clampViewport();
                         }
                     });
@@ -268,17 +283,38 @@ var Renderer = (function () {
             return { x: viewportX, y: viewportY };
         },
 
+        // compute the minimum allowed zoom so that the entire map can be visible
+        // when zoomed out. never allow it to exceed 1 (zooming in) because the
+        // default behaviour already shows the whole map at 1 when map is smaller
+        // than the canvas.
+        _computeMinZoom: function () {
+            if (!app || !app.renderer) return 0.25;
+            var cw = app.renderer.width;
+            var ch = app.renderer.height;
+            if (mapWidth <= 0 || mapHeight <= 0 || cw <= 0 || ch <= 0) return 0.25;
+            return Math.min(1, cw / mapWidth, ch / mapHeight);
+        },
+
         setZoom: function (level) {
-            var z = Math.max(0.25, Math.min(4, level));
+            var minZ = this._computeMinZoom();
+            var maxZ = 4;
+            var z = Math.max(minZ, Math.min(maxZ, level));
             targetZoom = z;
             targetViewportX = viewportX;
             targetViewportY = viewportY;
         },
 
         setZoomStep: function (direction, normX, normY) {
-            var idx = findNearestZoomIndex(zoomLevel);
-            idx = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, idx + direction));
-            var newZoom = ZOOM_LEVELS[idx];
+            var minZ = this._computeMinZoom();
+            // build a temporary zoom array that includes the dynamic minimum if
+            // it's smaller than the first hardcoded level
+            var levels = ZOOM_LEVELS.slice();
+            if (minZ < levels[0]) {
+                levels.unshift(minZ);
+            }
+            var idx = findNearestZoomIndex(zoomLevel, levels);
+            idx = Math.max(0, Math.min(levels.length - 1, idx + direction));
+            var newZoom = levels[idx];
             var cw = app ? app.renderer.width : 0;
             var ch = app ? app.renderer.height : 0;
             if (cw > 0 && ch > 0 && typeof normX === 'number' && typeof normY === 'number') {
@@ -300,6 +336,11 @@ var Renderer = (function () {
         setMapSize: function (w, h) {
             mapWidth = w;
             mapHeight = h;
+            // ensure current zoom satisfies new bounds
+            var minZ = this._computeMinZoom();
+            if (zoomLevel < minZ) {
+                this.setZoom(minZ);
+            }
         },
 
         getMapSize: function () {

@@ -237,6 +237,8 @@ function restart() {
             msg.sabLayout = SAB_LAYOUT;
         }
         simulationWorker.postMessage(msg);
+        // make sure minimap canvas also adjusts right away
+        if (Minimap.updateSize) Minimap.updateSize(CONFIG.mapWidth, CONFIG.mapHeight);
     }
 }
 
@@ -391,11 +393,33 @@ function hoverCheck() {
 var Minimap = {
     canvas: null,
     ctx: null,
+    // maximum pixel dimensions for the minimap; actual size will be adjusted
+    maxWidth: 140,
+    maxHeight: 105,
     width: 140,
     height: 105,
     _dragging: false,
     _onDragMove: null,
     _onDragEnd: null,
+    // recalc canvas dimensions based on the environment aspect ratio
+    updateSize: function (mapW, mapH) {
+        if (!this.canvas) return;
+        // calculate a fresh size preserving map aspect ratio and respecting maxima
+        var aspect = mapH > 0 ? mapW / mapH : 1;
+        var w = this.maxWidth;
+        var h = this.maxHeight;
+        // first try filling width
+        h = w / aspect;
+        if (h > this.maxHeight) {
+            // height overflowed, fall back to height-limited size
+            h = this.maxHeight;
+            w = h * aspect;
+        }
+        this.width = w;
+        this.height = h;
+        this.canvas.width = w;
+        this.canvas.height = h;
+    },
     _scrub: function (clientX, clientY) {
         var rect = this.canvas.getBoundingClientRect();
         var px = clientX - rect.left;
@@ -419,8 +443,8 @@ var Minimap = {
         var parent = document.getElementById(parentId);
         if (!parent) return;
         this.canvas = document.createElement('canvas');
-        this.canvas.width = this.width;
-        this.canvas.height = this.height;
+        // compute size based on current map dimensions, fall back to defaults
+        this.updateSize(CONFIG.mapWidth, CONFIG.mapHeight);
         this.canvas.className = 'minimap-canvas';
         this.canvas.setAttribute('aria-label', 'Minimap: drag to pan view');
         this.ctx = this.canvas.getContext('2d');
@@ -449,18 +473,24 @@ var Minimap = {
         if (!this.ctx || !this.canvas) return;
         var w = this.width;
         var h = this.height;
-        var scaleX = w / mapW;
-        var scaleY = h / mapH;
+        // compute uniform scale and centre offsets so aspect ratio is preserved
+        var scale = Math.min(w / mapW, h / mapH, 1); // do not upscale small maps
+        var mapDrawW = mapW * scale;
+        var mapDrawH = mapH * scale;
+        var offsetX = (w - mapDrawW) / 2;
+        var offsetY = (h - mapDrawH) / 2;
         this.ctx.fillStyle = THEME.minimapBg;
         this.ctx.fillRect(0, 0, w, h);
         this.ctx.strokeStyle = THEME.minimapBorder;
-        this.ctx.strokeRect(0, 0, w, h);
+        // draw border only around the actual map area
+        this.ctx.strokeRect(offsetX, offsetY, mapDrawW, mapDrawH);
         var visW = canvasW / zoom;
         var visH = canvasH / zoom;
-        var rx = viewportX * scaleX;
-        var ry = viewportY * scaleY;
-        var rw = visW * scaleX;
-        var rh = visH * scaleY;
+        // convert viewport coordinates into minimap space
+        var rx = offsetX + viewportX * scale;
+        var ry = offsetY + viewportY * scale;
+        var rw = visW * scale;
+        var rh = visH * scale;
         this.ctx.strokeStyle = THEME.minimapViewport;
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(rx, ry, rw, rh);
@@ -472,8 +502,8 @@ var Minimap = {
             if (!g.length) g = [0.5, 0.5, 0.5];
             var b = (g[2] != null ? g[2] : 0.5);
             this.ctx.fillStyle = 'rgb(' + Math.round(g[0] * 255) + ',' + Math.round(g[1] * 255) + ',' + Math.round(b * 255) + ')';
-            var sx = a.x * scaleX;
-            var sy = a.y * scaleY;
+            var sx = offsetX + a.x * scale;
+            var sy = offsetY + a.y * scale;
             this.ctx.beginPath();
             this.ctx.arc(sx, sy, 1.5, 0, Math.PI * 2);
             this.ctx.fill();
@@ -571,6 +601,8 @@ window.app = {
             // When running: redraw every frame (agents move). When paused: redraw only if viewport changed.
             if (!window.app.paused || vpChanged) {
                 var mapSize = Renderer.getMapSize ? Renderer.getMapSize() : { w: CONFIG.mapWidth, h: CONFIG.mapHeight };
+                // ensure minimap canvas dimensions reflect current environment
+                if (Minimap.updateSize) Minimap.updateSize(mapSize.w, mapSize.h);
                 var cw = Renderer.getWidth();
                 var ch = Renderer.getHeight();
                 Minimap.draw(window.app.currentIndividuals, vp.x, vp.y, zoom, mapSize.w, mapSize.h, cw, ch);
