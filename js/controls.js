@@ -44,6 +44,15 @@
     bindSlider('speedC', 'speedCSpan', 'speedCoefficient');
     bindSlider('initial', 'initialSpan', 'initialPopulation', function (v) { return String(Math.round(v)); });
 
+    var spatialSelect = get('spatialIndex');
+    if (spatialSelect) {
+      function updateSpatialIndex() {
+        CONFIG.spatialIndex = spatialSelect.value;
+      }
+      spatialSelect.addEventListener('change', updateSpatialIndex);
+      spatialSelect.value = CONFIG.spatialIndex || 'quadtree';
+    }
+
     var restartButton = get('restartBtn');
     if (restartButton) {
       restartButton.addEventListener('click', function () {

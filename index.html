@@ -57,7 +57,14 @@
     <div class="app-wrap">
         <main class="main-content">
             <div class="canvas-wrap">
+                <div class="canvas-tools">
+                    <button type="button" id="panBtn" class="canvas-tool" title="Pan mode: drag to move view"
+                        aria-pressed="false">Pan</button>
+                    <button type="button" id="zoomInBtn" class="canvas-tool" title="Zoom in">+</button>
+                    <button type="button" id="zoomOutBtn" class="canvas-tool" title="Zoom out">−</button>
+                </div>
                 <div id="canvasParent"></div>
+                <div id="minimapContainer" class="minimap-container"></div>
             </div>
             <div class="charts-wrap">
                 <div id="chart">
@@ -121,8 +128,23 @@
                                     = easier to watch single lineages.</span></span>
                         </span>
                         <span id="initialSpan" class="value"></span>
-                        <input type="range" min="75" max="250" value="100" class="slider" id="initial"
+                        <input type="range" min="75" max="250" value="75" class="slider" id="initial"
                             aria-describedby="initialSpan" />
+                    </div>
+                    <div class="param-row">
+                        <span class="param-label-cell">
+                            <label for="spatialIndex">Spatial index</label>
+                            <span class="info-trigger" tabindex="0" role="button"
+                                aria-label="Spatial index description"><span class="info-icon"
+                                    aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Broad-phase
+                                    for eat detection: none = O(n²), quadtree or spatial hash = faster for large
+                                    populations.</span></span>
+                        </span>
+                        <select id="spatialIndex" class="param-select" aria-label="Spatial index">
+                            <option value="none">None</option>
+                            <option value="quadtree" selected>Quadtree</option>
+                            <option value="spatialhash">Spatial hash</option>
+                        </select>
                     </div>
                 </div>
                 <div class="details-drawer__section">

@@ -10,7 +10,14 @@ const CONFIG = {
   // Genetics & population
   mutationRate: 0.1,
   reproductionRate: 0.2,
-  initialPopulation: 100,
+  initialPopulation: 75,
+
+  // World (large map, no wrapping)
+  mapWidth: 3200,
+  mapHeight: 2400,
+
+  // Performance: spatial index for eat detection ('none' | 'quadtree' | 'spatialhash')
+  spatialIndex: 'quadtree',
 
   // Coefficients (map genes to world)
   sizeCoefficient: 50,
@@ -21,7 +28,7 @@ const CONFIG = {
   costCoefficient: 18.5,
 };
 
-// Constants (not changed by UI) – sized to fit one laptop viewport
+// Constants (not changed by UI) – viewport size; map is CONFIG.mapWidth × CONFIG.mapHeight
 const CONSTANTS = {
   minSize: 0.1,
   minSpeed: 0.1,

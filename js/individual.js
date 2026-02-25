@@ -20,12 +20,25 @@ Individual.prototype.update = function (dt) {
     this.angle += random(-this.angleSpeed * dt, this.angleSpeed * dt);
     this.position.x += Math.cos(this.angle) * this.speed * dt;
     this.position.y += Math.sin(this.angle) * this.speed * dt;
-    var canvasWidth = CONSTANTS.canvasWidth;
-    var canvasHeight = CONSTANTS.canvasHeight;
-    if (this.position.x < -this.size) this.position.x = canvasWidth + this.size;
-    if (this.position.y < -this.size) this.position.y = canvasHeight + this.size;
-    if (this.position.x > canvasWidth + this.size) this.position.x = -this.size;
-    if (this.position.y > canvasHeight + this.size) this.position.y = -this.size;
+    var w = CONFIG.mapWidth;
+    var h = CONFIG.mapHeight;
+    var r = this.size / 2;
+    if (this.position.x < r) {
+        this.position.x = r;
+        this.angle = Math.PI - this.angle;
+    }
+    if (this.position.y < r) {
+        this.position.y = r;
+        this.angle = -this.angle;
+    }
+    if (this.position.x > w - r) {
+        this.position.x = w - r;
+        this.angle = Math.PI - this.angle;
+    }
+    if (this.position.y > h - r) {
+        this.position.y = h - r;
+        this.angle = -this.angle;
+    }
     this.hp -= this.dna.genes[0] * CONFIG.costCoefficient * dt;
 };
 
@@ -48,9 +61,7 @@ Individual.prototype.reproduce = function (dt) {
     if (random() < CONFIG.reproductionRate * dt) {
         var childDNA = new DNA(JSON.parse(JSON.stringify(this.dna.genes)));
         childDNA.mutate();
-        var canvasWidth = CONSTANTS.canvasWidth;
-        var canvasHeight = CONSTANTS.canvasHeight;
-        return new Individual(vec2(random(canvasWidth), random(canvasHeight)), childDNA);
+        return new Individual(vec2(random(CONFIG.mapWidth), random(CONFIG.mapHeight)), childDNA);
     }
     return null;
 };

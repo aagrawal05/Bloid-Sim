@@ -4,9 +4,11 @@
  * When sab is provided, writes state to SharedArrayBuffer instead of postMessage.
  */
 importScripts('math-utils.js');
+importScripts('spatial-hash.js');
+try { importScripts('https://unpkg.com/js-quadtree'); } catch (e) { /* quadtree optional; fallback to brute force */ }
 
 var cfg = {};
-var cst = { canvasWidth: 640, canvasHeight: 480 };
+var cst = { canvasWidth: 640, canvasHeight: 480, mapWidth: 3200, mapHeight: 2400 };
 var population = null;
 var sab = null;
 var sabLayout = null;
@@ -49,12 +51,25 @@ WorkerIndividual.prototype.update = function (dt) {
     this.angle += random(-this.angleSpeed * dt, this.angleSpeed * dt);
     this.position.x += Math.cos(this.angle) * this.speed * dt;
     this.position.y += Math.sin(this.angle) * this.speed * dt;
-    var w = cst.canvasWidth;
-    var h = cst.canvasHeight;
-    if (this.position.x < -this.size) this.position.x = w + this.size;
-    if (this.position.y < -this.size) this.position.y = h + this.size;
-    if (this.position.x > w + this.size) this.position.x = -this.size;
-    if (this.position.y > h + this.size) this.position.y = -this.size;
+    var w = cst.mapWidth;
+    var h = cst.mapHeight;
+    var r = this.size / 2;
+    if (this.position.x < r) {
+        this.position.x = r;
+        this.angle = Math.PI - this.angle;
+    }
+    if (this.position.y < r) {
+        this.position.y = r;
+        this.angle = -this.angle;
+    }
+    if (this.position.x > w - r) {
+        this.position.x = w - r;
+        this.angle = Math.PI - this.angle;
+    }
+    if (this.position.y > h - r) {
+        this.position.y = h - r;
+        this.angle = -this.angle;
+    }
     this.hp -= this.dna.genes[0] * cfg.costCoefficient * dt;
 };
 
@@ -78,7 +93,7 @@ WorkerIndividual.prototype.reproduce = function (dt) {
         var childDNA = new WorkerDNA(JSON.parse(JSON.stringify(this.dna.genes)));
         childDNA.mutate();
         return new WorkerIndividual(
-            vec2(random(cst.canvasWidth), random(cst.canvasHeight)),
+            vec2(random(cst.mapWidth), random(cst.mapHeight)),
             childDNA
         );
     }
@@ -96,7 +111,7 @@ WorkerIndividual.prototype.dead = function () {
 function WorkerPopulation(populationSize) {
     this.individuals = [];
     for (var i = 0; i < populationSize; i++) {
-        this.individuals.push(new WorkerIndividual(vec2(random(cst.canvasWidth), random(cst.canvasHeight))));
+        this.individuals.push(new WorkerIndividual(vec2(random(cst.mapWidth), random(cst.mapHeight))));
     }
 }
 
@@ -112,7 +127,7 @@ WorkerPopulation.prototype.run = function (dt) {
     }
 };
 
-WorkerPopulation.prototype.eat = function (individuals) {
+WorkerPopulation.prototype.eatBruteForce = function (individuals) {
     var toRemove = [];
     for (var i = individuals.length - 1; i >= 0; i--) {
         for (var j = individuals.length - 1; j >= 0; j--) {
@@ -131,6 +146,68 @@ WorkerPopulation.prototype.eat = function (individuals) {
     return individuals.filter(function (agent) { return toRemove.indexOf(agent) === -1; });
 };
 
+WorkerPopulation.prototype.eatQuadtree = function (individuals) {
+    if (individuals.length === 0) return individuals;
+    if (typeof QT === 'undefined') return this.eatBruteForce(individuals);
+    var toRemove = [];
+    var box = new QT.Box(0, 0, cst.mapWidth, cst.mapHeight);
+    var qt = new QT.QuadTree(box);
+    for (var i = 0; i < individuals.length; i++) {
+        var ind = individuals[i];
+        qt.insert(new QT.Point(ind.position.x, ind.position.y, { agent: ind }));
+    }
+    for (var i = 0; i < individuals.length; i++) {
+        var a = individuals[i];
+        var r = a.size / 2;
+        var nearby = qt.query(new QT.Circle(a.position.x, a.position.y, r));
+        for (var n = 0; n < nearby.length; n++) {
+            var other = nearby[n].data && nearby[n].data.agent;
+            if (!other || other === a) continue;
+            if (dist(a.position, other.position) < r && a.size > other.size * cfg.compareCoefficient) {
+                a.hp += Math.floor(other.hp * cfg.eatCoefficient);
+                toRemove.push(other);
+            }
+        }
+    }
+    return individuals.filter(function (agent) { return toRemove.indexOf(agent) === -1; });
+};
+
+WorkerPopulation.prototype.eatSpatialHash = function (individuals) {
+    if (individuals.length === 0) return individuals;
+    var cellSize = 80;
+    for (var i = 0; i < individuals.length; i++) {
+        var s = individuals[i].size / 2;
+        if (s > cellSize / 2) cellSize = Math.ceil(s * 2);
+    }
+    var hash = new SpatialHash(cellSize);
+    for (var i = 0; i < individuals.length; i++) {
+        individuals[i]._id = i;
+        hash.insert(individuals[i]);
+    }
+    var toRemove = [];
+    for (var i = 0; i < individuals.length; i++) {
+        var a = individuals[i];
+        var r = a.size / 2;
+        var nearby = hash.queryCircle(a.position.x, a.position.y, r);
+        for (var n = 0; n < nearby.length; n++) {
+            var other = nearby[n];
+            if (other === a) continue;
+            if (dist(a.position, other.position) < r && a.size > other.size * cfg.compareCoefficient) {
+                a.hp += Math.floor(other.hp * cfg.eatCoefficient);
+                toRemove.push(other);
+            }
+        }
+    }
+    return individuals.filter(function (agent) { return toRemove.indexOf(agent) === -1; });
+};
+
+WorkerPopulation.prototype.eat = function (individuals) {
+    var mode = (cfg.spatialIndex === 'quadtree' || cfg.spatialIndex === 'spatialhash') ? cfg.spatialIndex : 'none';
+    if (mode === 'quadtree') return this.eatQuadtree(individuals);
+    if (mode === 'spatialhash') return this.eatSpatialHash(individuals);
+    return this.eatBruteForce(individuals);
+};
+
 function applyConfigAndConstants(msg) {
     if (msg.config) {
         cfg.fps = msg.config.fps;
@@ -144,6 +221,7 @@ function applyConfigAndConstants(msg) {
         cfg.eatCoefficient = msg.config.eatCoefficient;
         cfg.compareCoefficient = msg.config.compareCoefficient;
         cfg.costCoefficient = msg.config.costCoefficient;
+        if (msg.config.spatialIndex !== undefined) cfg.spatialIndex = msg.config.spatialIndex;
     }
     if (msg.constants) {
         cst.minSize = msg.constants.minSize;
@@ -152,6 +230,8 @@ function applyConfigAndConstants(msg) {
     }
     if (typeof msg.canvasWidth === 'number') cst.canvasWidth = msg.canvasWidth;
     if (typeof msg.canvasHeight === 'number') cst.canvasHeight = msg.canvasHeight;
+    if (typeof msg.mapWidth === 'number') cst.mapWidth = msg.mapWidth;
+    if (typeof msg.mapHeight === 'number') cst.mapHeight = msg.mapHeight;
 }
 
 function buildState() {

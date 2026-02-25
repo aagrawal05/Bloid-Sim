@@ -3,10 +3,10 @@
  */
 function Population(populationSize) {
     this.individuals = [];
-    var canvasWidth = CONSTANTS.canvasWidth;
-    var canvasHeight = CONSTANTS.canvasHeight;
+    var mapWidth = CONFIG.mapWidth;
+    var mapHeight = CONFIG.mapHeight;
     for (var i = 0; i < populationSize; i++) {
-        this.individuals.push(new Individual(vec2(random(canvasWidth), random(canvasHeight))));
+        this.individuals.push(new Individual(vec2(random(mapWidth), random(mapHeight))));
     }
 }
 

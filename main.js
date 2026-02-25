@@ -24,7 +24,9 @@ function sendWorkerInit() {
         config: CONFIG,
         constants: CONSTANTS,
         canvasWidth: dims.w,
-        canvasHeight: dims.h
+        canvasHeight: dims.h,
+        mapWidth: CONFIG.mapWidth,
+        mapHeight: CONFIG.mapHeight
     };
     if (useSAB && sharedBuffer && typeof SAB_LAYOUT !== 'undefined') {
         msg.sab = sharedBuffer;
@@ -43,7 +45,9 @@ function sendWorkerTick() {
         config: CONFIG,
         constants: CONSTANTS,
         canvasWidth: dims.w,
-        canvasHeight: dims.h
+        canvasHeight: dims.h,
+        mapWidth: CONFIG.mapWidth,
+        mapHeight: CONFIG.mapHeight
     });
 }
 
@@ -112,6 +116,8 @@ function init() {
     };
 
     Renderer.init('canvasParent', function onRendererReady() {
+        if (Renderer.setMapSize) Renderer.setMapSize(CONFIG.mapWidth, CONFIG.mapHeight);
+
         simulationWorker = new Worker('js/simulation-worker.js');
         if (useSAB) {
             Renderer.setStateProvider(function () {
@@ -146,7 +152,40 @@ function init() {
         var canvasEl = Renderer.getCanvas && Renderer.getCanvas();
         if (canvasEl) {
             canvasEl.addEventListener('mousemove', window.app._onMouseMove);
+            canvasEl.addEventListener('mousedown', window.app._onMouseDown);
+            canvasEl.addEventListener('mouseup', window.app._onMouseUp);
             canvasEl.addEventListener('mouseleave', window.app._onMouseLeave);
+            canvasEl.addEventListener('wheel', function (e) {
+                e.preventDefault();
+                var zoom = Renderer.getZoom();
+                var delta = e.deltaY > 0 ? -0.1 : 0.1;
+                Renderer.setZoom(zoom * (1 + delta));
+            }, { passive: false });
+        }
+
+        if (Minimap.init) Minimap.init('minimapContainer');
+        window.app._minimapLoop();
+
+        var panBtn = document.getElementById('panBtn');
+        if (panBtn && canvasEl) {
+            panBtn.addEventListener('click', function () {
+                window.app.panMode = !window.app.panMode;
+                panBtn.classList.toggle('canvas-tool--active', window.app.panMode);
+                panBtn.setAttribute('aria-pressed', window.app.panMode ? 'true' : 'false');
+                canvasEl.style.cursor = window.app.panMode ? 'grab' : '';
+            });
+        }
+        var zoomInBtn = document.getElementById('zoomInBtn');
+        if (zoomInBtn) {
+            zoomInBtn.addEventListener('click', function () {
+                Renderer.setZoom(Renderer.getZoom() * 1.25);
+            });
+        }
+        var zoomOutBtn = document.getElementById('zoomOutBtn');
+        if (zoomOutBtn) {
+            zoomOutBtn.addEventListener('click', function () {
+                Renderer.setZoom(Renderer.getZoom() / 1.25);
+            });
         }
     });
 }
@@ -161,7 +200,9 @@ function restart() {
             config: CONFIG,
             constants: CONSTANTS,
             canvasWidth: dims.w,
-            canvasHeight: dims.h
+            canvasHeight: dims.h,
+            mapWidth: CONFIG.mapWidth,
+            mapHeight: CONFIG.mapHeight
         };
         if (useSAB && sharedBuffer && typeof SAB_LAYOUT !== 'undefined') {
             msg.sab = sharedBuffer;
@@ -200,6 +241,22 @@ function updateInspector(individual) {
 var _mouseX = null;
 var _mouseY = null;
 
+function screenToWorld(screenX, screenY) {
+    var canvasEl = Renderer.getCanvas && Renderer.getCanvas();
+    if (!canvasEl) return { x: 0, y: 0 };
+    var rect = canvasEl.getBoundingClientRect();
+    var cw = Renderer.getWidth();
+    var ch = Renderer.getHeight();
+    var zoom = Renderer.getZoom ? Renderer.getZoom() : 1;
+    var vp = Renderer.getViewport ? Renderer.getViewport() : { x: 0, y: 0 };
+    var normX = (screenX - rect.left) / rect.width;
+    var normY = (screenY - rect.top) / rect.height;
+    return {
+        x: vp.x + normX * (cw / zoom),
+        y: vp.y + normY * (ch / zoom)
+    };
+}
+
 function hoverCheck() {
     if (_mouseX == null || _mouseY == null) return;
     var individuals = window.app.currentIndividuals;
@@ -225,6 +282,76 @@ function hoverCheck() {
     }
 }
 
+var Minimap = {
+    canvas: null,
+    ctx: null,
+    width: 140,
+    height: 105,
+    init: function (parentId) {
+        var parent = document.getElementById(parentId);
+        if (!parent) return;
+        this.canvas = document.createElement('canvas');
+        this.canvas.width = this.width;
+        this.canvas.height = this.height;
+        this.canvas.className = 'minimap-canvas';
+        this.canvas.setAttribute('aria-label', 'Minimap: click to move view');
+        this.ctx = this.canvas.getContext('2d');
+        parent.appendChild(this.canvas);
+        var self = this;
+        this.canvas.addEventListener('click', function (e) {
+            var rect = self.canvas.getBoundingClientRect();
+            var px = e.clientX - rect.left;
+            var py = e.clientY - rect.top;
+            var nx = px / rect.width;
+            var ny = py / rect.height;
+            var mapW = CONFIG.mapWidth;
+            var mapH = CONFIG.mapHeight;
+            var worldX = nx * mapW;
+            var worldY = ny * mapH;
+            var cw = Renderer.getWidth();
+            var ch = Renderer.getHeight();
+            var zoom = Renderer.getZoom();
+            var visW = cw / zoom;
+            var visH = ch / zoom;
+            var vx = Math.max(0, Math.min(mapW - visW, worldX - visW / 2));
+            var vy = Math.max(0, Math.min(mapH - visH, worldY - visH / 2));
+            Renderer.setViewport(vx, vy);
+        });
+    },
+    draw: function (agents, viewportX, viewportY, zoom, mapW, mapH, canvasW, canvasH) {
+        if (!this.ctx || !this.canvas) return;
+        var w = this.width;
+        var h = this.height;
+        var scaleX = w / mapW;
+        var scaleY = h / mapH;
+        this.ctx.fillStyle = '#25262b';
+        this.ctx.fillRect(0, 0, w, h);
+        this.ctx.strokeStyle = '#373a40';
+        this.ctx.strokeRect(0, 0, w, h);
+        var visW = canvasW / zoom;
+        var visH = canvasH / zoom;
+        var rx = viewportX * scaleX;
+        var ry = viewportY * scaleY;
+        var rw = visW * scaleX;
+        var rh = visH * scaleY;
+        this.ctx.strokeStyle = 'rgba(77, 171, 247, 0.9)';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(rx, ry, rw, rh);
+        this.ctx.fillStyle = 'rgba(77, 171, 247, 0.15)';
+        this.ctx.fillRect(rx, ry, rw, rh);
+        for (var i = 0; i < agents.length; i++) {
+            var a = agents[i];
+            var g = a.dna && a.dna.genes ? a.dna.genes : (a.genes || [0.5, 0.5, 0.5]);
+            this.ctx.fillStyle = 'rgb(' + Math.round(g[0] * 255) + ',' + Math.round(g[1] * 255) + ',' + Math.round(g[2] * 255) + ')';
+            var sx = a.x * scaleX;
+            var sy = a.y * scaleY;
+            this.ctx.beginPath();
+            this.ctx.arc(sx, sy, 1.5, 0, Math.PI * 2);
+            this.ctx.fill();
+        }
+    }
+};
+
 window.app = {
     restart: restart,
     updateInspector: updateInspector,
@@ -233,6 +360,9 @@ window.app = {
     mouseSketchX: null,
     mouseSketchY: null,
     currentIndividuals: [],
+    panMode: false,
+    zoomMode: false,
+    _panStart: null,
     _onMouseMove: function (e) {
         var canvasEl = Renderer.getCanvas && Renderer.getCanvas();
         if (!canvasEl) return;
@@ -241,16 +371,56 @@ window.app = {
         var cw = Renderer.getWidth();
         var ch = Renderer.getHeight();
         if (!cw || !ch) return;
-        _mouseX = (e.clientX - rect.left) * (cw / rect.width);
-        _mouseY = (e.clientY - rect.top) * (ch / rect.height);
+        if (window.app.panMode && window.app._panStart) {
+            var dx = (e.clientX - window.app._panStart.x) * (cw / rect.width) / (Renderer.getZoom ? Renderer.getZoom() : 1);
+            var dy = (e.clientY - window.app._panStart.y) * (ch / rect.height) / (Renderer.getZoom ? Renderer.getZoom() : 1);
+            var vp = Renderer.getViewport();
+            Renderer.setViewport(vp.x - dx, vp.y - dy);
+            window.app._panStart = { x: e.clientX, y: e.clientY };
+            return;
+        }
+        var zoom = Renderer.getZoom ? Renderer.getZoom() : 1;
+        var vp = Renderer.getViewport ? Renderer.getViewport() : { x: 0, y: 0 };
+        var normX = (e.clientX - rect.left) / rect.width;
+        var normY = (e.clientY - rect.top) / rect.height;
+        _mouseX = vp.x + normX * (cw / zoom);
+        _mouseY = vp.y + normY * (ch / zoom);
         hoverCheck();
+    },
+    _onMouseDown: function (e) {
+        if (e.button !== 0) return;
+        if (window.app.panMode) {
+            window.app._panStart = { x: e.clientX, y: e.clientY };
+            var canvasEl = Renderer.getCanvas && Renderer.getCanvas();
+            if (canvasEl) canvasEl.style.cursor = 'grabbing';
+        }
+    },
+    _onMouseUp: function (e) {
+        if (e.button !== 0) return;
+        if (window.app.panMode) {
+            window.app._panStart = null;
+            var canvasEl = Renderer.getCanvas && Renderer.getCanvas();
+            if (canvasEl) canvasEl.style.cursor = 'grab';
+        }
     },
     _onMouseLeave: function () {
         _mouseX = null;
         _mouseY = null;
+        window.app._panStart = null;
         Renderer.setHovered(null);
         if (window.app.updateInspector) window.app.updateInspector(null);
         lastHoveredIndex = null;
+    },
+    _minimapLoop: function () {
+        if (Minimap.canvas && Renderer.getViewport) {
+            var vp = Renderer.getViewport();
+            var zoom = Renderer.getZoom();
+            var mapSize = Renderer.getMapSize ? Renderer.getMapSize() : { w: CONFIG.mapWidth, h: CONFIG.mapHeight };
+            var cw = Renderer.getWidth();
+            var ch = Renderer.getHeight();
+            Minimap.draw(window.app.currentIndividuals, vp.x, vp.y, zoom, mapSize.w, mapSize.h, cw, ch);
+        }
+        requestAnimationFrame(window.app._minimapLoop);
     }
 };
 
