@@ -43,6 +43,12 @@
     bindSlider('cost', 'costSpan', 'costCoefficient');
     bindSlider('speedC', 'speedCSpan', 'speedCoefficient');
     bindSlider('initial', 'initialSpan', 'initialPopulation', function (v) { return String(Math.round(v)); });
+    bindSlider('mapWidth', 'mapWidthSpan', 'mapWidth', function (v) { return String(Math.round(v)); }, undefined, function () {
+      if (Renderer && Renderer.setMapSize) Renderer.setMapSize(CONFIG.mapWidth, CONFIG.mapHeight);
+    });
+    bindSlider('mapHeight', 'mapHeightSpan', 'mapHeight', function (v) { return String(Math.round(v)); }, undefined, function () {
+      if (Renderer && Renderer.setMapSize) Renderer.setMapSize(CONFIG.mapWidth, CONFIG.mapHeight);
+    });
 
     var spatialSelect = get('spatialIndex');
     if (spatialSelect) {

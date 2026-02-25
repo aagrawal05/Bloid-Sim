@@ -148,6 +148,34 @@
                     </div>
                 </div>
                 <div class="details-drawer__section">
+                    <h2 class="details-drawer__heading">Environment</h2>
+                    <p class="details-drawer__hint">Map dimensions in world units. Restart to apply changes.</p>
+                    <div class="param-row">
+                        <span class="param-label-cell">
+                            <label for="mapWidth">Map width</label>
+                            <span class="info-trigger" tabindex="0" role="button"
+                                aria-label="Map width description"><span class="info-icon"
+                                    aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Width of
+                                    the simulation world. Larger = more space, sparser agents.</span></span>
+                        </span>
+                        <span id="mapWidthSpan" class="value"></span>
+                        <input type="range" min="800" max="6400" step="100" value="3200" class="slider" id="mapWidth"
+                            aria-describedby="mapWidthSpan" />
+                    </div>
+                    <div class="param-row">
+                        <span class="param-label-cell">
+                            <label for="mapHeight">Map height</label>
+                            <span class="info-trigger" tabindex="0" role="button"
+                                aria-label="Map height description"><span class="info-icon"
+                                    aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Height of
+                                    the simulation world. Larger = more space, sparser agents.</span></span>
+                        </span>
+                        <span id="mapHeightSpan" class="value"></span>
+                        <input type="range" min="600" max="4800" step="100" value="2400" class="slider" id="mapHeight"
+                            aria-describedby="mapHeightSpan" />
+                    </div>
+                </div>
+                <div class="details-drawer__section">
                     <h2 class="details-drawer__heading">Coefficients</h2>
                     <p class="details-drawer__hint">Map genes to world: size, HP, eating, cost, speed.</p>
                     <div class="param-row">

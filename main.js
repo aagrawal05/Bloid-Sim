@@ -277,6 +277,28 @@ var Minimap = {
     ctx: null,
     width: 140,
     height: 105,
+    _dragging: false,
+    _onDragMove: null,
+    _onDragEnd: null,
+    _scrub: function (clientX, clientY) {
+        var rect = this.canvas.getBoundingClientRect();
+        var px = clientX - rect.left;
+        var py = clientY - rect.top;
+        var nx = Math.max(0, Math.min(1, px / rect.width));
+        var ny = Math.max(0, Math.min(1, py / rect.height));
+        var mapW = CONFIG.mapWidth;
+        var mapH = CONFIG.mapHeight;
+        var worldX = nx * mapW;
+        var worldY = ny * mapH;
+        var cw = Renderer.getWidth();
+        var ch = Renderer.getHeight();
+        var zoom = Renderer.getZoom();
+        var visW = cw / zoom;
+        var visH = ch / zoom;
+        var vx = Math.max(0, Math.min(mapW - visW, worldX - visW / 2));
+        var vy = Math.max(0, Math.min(mapH - visH, worldY - visH / 2));
+        Renderer.setViewport(vx, vy);
+    },
     init: function (parentId) {
         var parent = document.getElementById(parentId);
         if (!parent) return;
@@ -284,28 +306,27 @@ var Minimap = {
         this.canvas.width = this.width;
         this.canvas.height = this.height;
         this.canvas.className = 'minimap-canvas';
-        this.canvas.setAttribute('aria-label', 'Minimap: click to move view');
+        this.canvas.setAttribute('aria-label', 'Minimap: drag to pan view');
         this.ctx = this.canvas.getContext('2d');
         parent.appendChild(this.canvas);
         var self = this;
-        this.canvas.addEventListener('click', function (e) {
-            var rect = self.canvas.getBoundingClientRect();
-            var px = e.clientX - rect.left;
-            var py = e.clientY - rect.top;
-            var nx = px / rect.width;
-            var ny = py / rect.height;
-            var mapW = CONFIG.mapWidth;
-            var mapH = CONFIG.mapHeight;
-            var worldX = nx * mapW;
-            var worldY = ny * mapH;
-            var cw = Renderer.getWidth();
-            var ch = Renderer.getHeight();
-            var zoom = Renderer.getZoom();
-            var visW = cw / zoom;
-            var visH = ch / zoom;
-            var vx = Math.max(0, Math.min(mapW - visW, worldX - visW / 2));
-            var vy = Math.max(0, Math.min(mapH - visH, worldY - visH / 2));
-            Renderer.setViewport(vx, vy);
+        this._onDragMove = function (e) {
+            if (!self._dragging) return;
+            self._scrub(e.clientX, e.clientY);
+        };
+        this._onDragEnd = function () {
+            if (!self._dragging) return;
+            self._dragging = false;
+            document.removeEventListener('mousemove', self._onDragMove);
+            document.removeEventListener('mouseup', self._onDragEnd);
+        };
+        this.canvas.addEventListener('mousedown', function (e) {
+            if (e.button !== 0) return;
+            e.preventDefault();
+            self._dragging = true;
+            self._scrub(e.clientX, e.clientY);
+            document.addEventListener('mousemove', self._onDragMove);
+            document.addEventListener('mouseup', self._onDragEnd);
         });
     },
     draw: function (agents, viewportX, viewportY, zoom, mapW, mapH, canvasW, canvasH) {
