@@ -23,13 +23,27 @@
         src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-adapter-luxon/1.0.0-beta.1/chartjs-adapter-luxon.min.js"></script>
     <script
         src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-streaming/2.0.0/chartjs-plugin-streaming.min.js"></script>
+    <!-- Script load order & dependencies:
+         1. CDN libs: PixiJS, neataptic, D3, Chart.js, Luxon
+         2. sab-layout.js    (no deps, defines SAB_LAYOUT)
+         3. config.js         (no deps, defines CONFIG, CONSTANTS)
+         4. math-utils.js     (no deps, defines random/vec2/dist/getGenes)
+         5. controls.js       (needs CONFIG, deferred via DOMContentLoaded)
+         6. renderer.js       (needs PIXI/CONFIG/CONSTANTS, defines Renderer)
+         7. charts.js         (needs Chart.js/CONFIG/CONSTANTS/getGenes, defines Charts)
+         8. graph-renderer.js (needs d3, defines GraphRenderer)
+         9. inspector.js      (needs GraphRenderer/getGenes/CONFIG/neataptic, defines Inspector)
+        10. main.js           (needs all above, deferred via DOMContentLoaded)
+        11. drawer.js         (DOM-only, loads after body, deferred via DOMContentLoaded)
+    -->
     <script src="js/sab-layout.js"></script>
     <script src="js/config.js"></script>
+    <script src="js/math-utils.js"></script>
     <script src="js/controls.js"></script>
     <script src="js/renderer.js"></script>
     <script src="js/charts.js"></script>
     <script src="js/graph-renderer.js"></script>
-    <script src="js/math-utils.js"></script>
+    <script src="js/inspector.js"></script>
     <script src="main.js"></script>
 </head>
 

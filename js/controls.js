@@ -30,6 +30,7 @@
   }
 
   function init() {
+    if (typeof CONFIG === 'undefined') return;
     bindSlider('Slider', 'fps', 'fps', function (v) { return String(Math.round(v)); }, undefined, function () {
       if (window.app && typeof window.app.startSimulationLoop === 'function') window.app.startSimulationLoop();
     });

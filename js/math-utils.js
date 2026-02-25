@@ -18,3 +18,7 @@ function vec2(x, y) {
 function dist(a, b) {
     return Math.hypot(b.x - a.x, b.y - a.y);
 }
+
+function getGenes(d) {
+    return (d.dna && d.dna.genes) ? d.dna.genes : (d.genes || []);
+}

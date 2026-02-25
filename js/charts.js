@@ -80,24 +80,19 @@ var Charts = (function () {
     function addGeneSample(chart, individuals, geneIndex, yAxisDivisor, yAxisMin, yAxisMax, simTime) {
         if (!individuals || individuals.length === 0) return;
         var grace = 0.05;
-        var getGenes = function (ind) { return (ind.dna && ind.dna.genes ? ind.dna.genes : ind.genes) || []; };
-        var sum = individuals.reduce(function (acc, curr) { var g = getGenes(curr); return acc + (g[geneIndex] != null ? g[geneIndex] : 0); }, 0);
-        var average = sum / individuals.length;
-        var minIndividual = individuals.reduce(function (prev, curr) {
-            var pg = getGenes(prev);
-            var cg = getGenes(curr);
-            return (pg[geneIndex] != null ? pg[geneIndex] : 1) < (cg[geneIndex] != null ? cg[geneIndex] : 1) ? prev : curr;
-        });
-        var maxIndividual = individuals.reduce(function (prev, curr) {
-            var pg = getGenes(prev);
-            var cg = getGenes(curr);
-            return (pg[geneIndex] != null ? pg[geneIndex] : 0) > (cg[geneIndex] != null ? cg[geneIndex] : 0) ? prev : curr;
-        });
-        var gMin = getGenes(minIndividual)[geneIndex];
-        var gMax = getGenes(maxIndividual)[geneIndex];
-        var avgY = average / yAxisDivisor;
-        var minY = (gMin != null ? gMin : 0) / yAxisDivisor;
-        var maxY = (gMax != null ? gMax : 0) / yAxisDivisor;
+        var sum = 0;
+        var gMin = Infinity;
+        var gMax = -Infinity;
+        for (var i = 0; i < individuals.length; i++) {
+            var g = getGenes(individuals[i]);
+            var val = g[geneIndex] != null ? g[geneIndex] : 0;
+            sum += val;
+            if (val < gMin) gMin = val;
+            if (val > gMax) gMax = val;
+        }
+        var avgY = (sum / individuals.length) / yAxisDivisor;
+        var minY = gMin / yAxisDivisor;
+        var maxY = gMax / yAxisDivisor;
         chart.data.datasets[0].data.push({ x: simTime, y: avgY });
         chart.data.datasets[1].data.push({ x: simTime, y: minY });
         chart.data.datasets[2].data.push({ x: simTime, y: maxY });
@@ -129,32 +124,51 @@ var Charts = (function () {
         }
     }
 
+    var MAX_POINTS = 600;
+
     function trimWindow(chart, simTime) {
         var cutoff = simTime - WINDOW_SECONDS;
         for (var d = 0; d < chart.data.datasets.length; d++) {
             var pts = chart.data.datasets[d].data;
-            while (pts.length > 0 && pts[0].x < cutoff) {
-                pts.shift();
+            var trimCount = 0;
+            while (trimCount < pts.length && pts[trimCount].x < cutoff) {
+                trimCount++;
             }
+            if (trimCount > 0) pts.splice(0, trimCount);
+            if (pts.length > MAX_POINTS) pts.splice(0, pts.length - MAX_POINTS);
         }
     }
 
     var populationChartRef, sizeChartRef, agilityChartRef, obsRangeChartRef;
 
+    function getCtx(id) {
+        var el = document.getElementById(id);
+        return el ? el.getContext('2d') : null;
+    }
+
+    var noopResult = {
+        populationChart: null, sizeChart: null, agilityChart: null, obsRangeChart: null,
+        sample: function () {}
+    };
+
     function createAll(getPopulation) {
-        var populationCtx = document.getElementById('populationChart').getContext('2d');
+        if (typeof Chart === 'undefined' || typeof CONSTANTS === 'undefined') return noopResult;
+
+        var populationCtx = getCtx('populationChart');
+        var sizeCtx = getCtx('sizeChart');
+        var agilityCtx = getCtx('agilityChart');
+        var obsRangeCtx = getCtx('obsRangeChart');
+        if (!populationCtx || !sizeCtx || !agilityCtx || !obsRangeCtx) return noopResult;
+
         populationChartRef = createPopulationChart(populationCtx);
         sizeChartRef = createGeneChart(
-            document.getElementById('sizeChart').getContext('2d'),
-            'Size Gene', 0, '#ff6b6b', 'rgba(255, 107, 107, 0.2)', 1, CONSTANTS.minSize, 1
+            sizeCtx, 'Size Gene', 0, '#ff6b6b', 'rgba(255, 107, 107, 0.2)', 1, CONSTANTS.minSize, 1
         );
         agilityChartRef = createGeneChart(
-            document.getElementById('agilityChart').getContext('2d'),
-            'Agility Gene', 1, '#51cf66', 'rgba(81, 207, 102, 0.2)', 1, CONSTANTS.minAgility, 1
+            agilityCtx, 'Agility Gene', 1, '#51cf66', 'rgba(81, 207, 102, 0.2)', 1, CONSTANTS.minAgility, 1
         );
         obsRangeChartRef = createGeneChart(
-            document.getElementById('obsRangeChart').getContext('2d'),
-            'Observation Range Gene', 2, '#74c0fc', 'rgba(116, 192, 252, 0.2)', 1, CONSTANTS.minObservationRange, 1
+            obsRangeCtx, 'Observation Range Gene', 2, '#74c0fc', 'rgba(116, 192, 252, 0.2)', 1, CONSTANTS.minObservationRange, 1
         );
 
         function sample(simTime) {

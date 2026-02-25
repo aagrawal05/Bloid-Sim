@@ -198,7 +198,7 @@ WorkerPopulation.prototype.queryNearbyAgents = function (x, y, r, index) {
 WorkerPopulation.prototype.run = function (dt) {
     var individuals = this.individuals;
     var index = this.buildSpatialIndex(individuals);
-    this.individuals = this.eatWithIndex(individuals, index);
+    this.individuals = this.eat(individuals, index);
     individuals = this.individuals;
     for (var i = individuals.length - 1; i >= 0; i--) {
         var agent = individuals[i];
@@ -228,43 +228,12 @@ function applyEat(eater, prey, toRemove) {
     }
 }
 
-WorkerPopulation.prototype.eatBruteForce = function (individuals) {
-    var toRemove = [];
-    for (var i = individuals.length - 1; i >= 0; i--) {
-        for (var j = individuals.length - 1; j >= 0; j--) {
-            if (j !== i) applyEat(individuals[i], individuals[j], toRemove);
-        }
-    }
-    return individuals.filter(function (agent) { return toRemove.indexOf(agent) === -1; });
-};
-
-WorkerPopulation.prototype.eatWithIndex = function (individuals, index) {
-    if (!index || index.mode === 'none') return this.eatBruteForce(individuals);
-    if (index.mode === 'quadtree' && index.qt) return this.eatQuadtreeWithIndex(individuals, index.qt);
-    if (index.mode === 'spatialhash' && index.hash) return this.eatSpatialHashWithIndex(individuals, index.hash);
-    return this.eatBruteForce(individuals);
-};
-
-WorkerPopulation.prototype.eatQuadtreeWithIndex = function (individuals, qt) {
+WorkerPopulation.prototype.eat = function (individuals, index) {
     if (individuals.length === 0) return individuals;
     var toRemove = [];
     for (var i = 0; i < individuals.length; i++) {
         var a = individuals[i];
-        var nearby = qt.query(new QT.Circle(a.position.x, a.position.y, a.size / 2));
-        for (var n = 0; n < nearby.length; n++) {
-            var other = nearby[n].data && nearby[n].data.agent;
-            if (other && other !== a) applyEat(a, other, toRemove);
-        }
-    }
-    return individuals.filter(function (agent) { return toRemove.indexOf(agent) === -1; });
-};
-
-WorkerPopulation.prototype.eatSpatialHashWithIndex = function (individuals, hash) {
-    if (individuals.length === 0) return individuals;
-    var toRemove = [];
-    for (var i = 0; i < individuals.length; i++) {
-        var a = individuals[i];
-        var nearby = hash.queryCircle(a.position.x, a.position.y, a.size / 2);
+        var nearby = this.queryNearbyAgents(a.position.x, a.position.y, a.size / 2, index);
         for (var n = 0; n < nearby.length; n++) {
             if (nearby[n] !== a) applyEat(a, nearby[n], toRemove);
         }
@@ -272,33 +241,18 @@ WorkerPopulation.prototype.eatSpatialHashWithIndex = function (individuals, hash
     return individuals.filter(function (agent) { return toRemove.indexOf(agent) === -1; });
 };
 
-WorkerPopulation.prototype.eat = function (individuals) {
-    var index = this.buildSpatialIndex(individuals);
-    return this.eatWithIndex(individuals, index);
-};
-
 function applyConfigAndConstants(msg) {
     if (msg.config) {
-        cfg.fps = msg.config.fps;
-        cfg.simulationSpeed = msg.config.simulationSpeed;
-        cfg.mutationRate = msg.config.mutationRate;
-        cfg.reproductionRate = msg.config.reproductionRate;
-        cfg.initialPopulation = msg.config.initialPopulation;
-        cfg.sizeCoefficient = msg.config.sizeCoefficient;
-        cfg.agilitySpeedCoefficient = msg.config.agilitySpeedCoefficient;
-        cfg.agilityAngleCoefficient = msg.config.agilityAngleCoefficient;
-        cfg.hpCoefficient = msg.config.hpCoefficient;
-        cfg.eatCoefficient = msg.config.eatCoefficient;
-        cfg.compareCoefficient = msg.config.compareCoefficient;
-        cfg.costCoefficient = msg.config.costCoefficient;
-        cfg.observationRangeCoefficient = msg.config.observationRangeCoefficient;
-        cfg.observationCostCoefficient = msg.config.observationCostCoefficient;
-        if (msg.config.spatialIndex !== undefined) cfg.spatialIndex = msg.config.spatialIndex;
+        var keys = Object.keys(msg.config);
+        for (var i = 0; i < keys.length; i++) {
+            if (msg.config[keys[i]] !== undefined) cfg[keys[i]] = msg.config[keys[i]];
+        }
     }
     if (msg.constants) {
-        cst.minSize = msg.constants.minSize;
-        cst.minAgility = msg.constants.minAgility;
-        cst.minObservationRange = msg.constants.minObservationRange;
+        var ckeys = Object.keys(msg.constants);
+        for (var i = 0; i < ckeys.length; i++) {
+            if (msg.constants[ckeys[i]] !== undefined) cst[ckeys[i]] = msg.constants[ckeys[i]];
+        }
     }
     if (typeof msg.canvasWidth === 'number') cst.canvasWidth = msg.canvasWidth;
     if (typeof msg.canvasHeight === 'number') cst.canvasHeight = msg.canvasHeight;
@@ -327,20 +281,21 @@ function writeStateToSAB() {
     var countOffset = writeIdx === 0 ? 1 : 1 + (bytesPerBuffer / 4);
     var dataOffset = writeIdx === 0 ? 2 : 2 + (bytesPerBuffer / 4);
     i32[countOffset] = n;
+    var F = layout.FIELD;
     for (var i = 0; i < n; i++) {
         var d = individuals[i].toDrawable();
         var base = dataOffset + i * FPA;
-        f32[base] = d.x;
-        f32[base + 1] = d.y;
-        f32[base + 2] = d.size;
-        f32[base + 3] = d.r;
-        f32[base + 4] = d.g;
-        f32[base + 5] = d.b;
-        f32[base + 6] = d.a;
-        f32[base + 7] = d.genes[0];
-        f32[base + 8] = d.genes[1];
-        f32[base + 9] = d.genes[2];
-        f32[base + 10] = d.hp;
+        f32[base + F.X] = d.x;
+        f32[base + F.Y] = d.y;
+        f32[base + F.SIZE] = d.size;
+        f32[base + F.R] = d.r;
+        f32[base + F.G] = d.g;
+        f32[base + F.B] = d.b;
+        f32[base + F.A] = d.a;
+        f32[base + F.GENE_0] = d.genes[0];
+        f32[base + F.GENE_1] = d.genes[1];
+        f32[base + F.GENE_2] = d.genes[2];
+        f32[base + F.HP] = d.hp;
     }
     Atomics.store(i32, 0, writeIdx);
 }

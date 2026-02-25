@@ -1,14 +1,14 @@
 /**
- * Custom neural network graph renderer with D3 Force Layout
- * Interactive force-directed layout with dark theme aesthetic
+ * Custom neural network graph renderer with D3 Force Layout.
+ * Interactive force-directed layout with dark theme aesthetic.
  */
-(function (global) {
+var GraphRenderer = (function () {
     var GraphRenderer = {
         // Configuration
         nodeRadius: 12,
         gateRadius: 5,
         linkDistance: 80,
-        charge: -300,  // Repulsion between nodes
+        charge: -300,
         gravity: 0.05,
 
         // Theme colors (matching styles.css)
@@ -22,46 +22,39 @@
             accentHover: '#74c0fc'
         },
 
-        // Node colors by activation type - distinct colors matching dark theme
+        // Node colors by activation type
         activationColors: {
-            INPUT: '#4dabf7',           // Bright blue (accent)
-            OUTPUT: '#ff6b6b',          // Bright red (danger)
-            LOGISTIC: '#ff922b',        // Vibrant orange
-            TANH: '#ffd43b',            // Bright yellow
-            IDENTITY: '#9775fa',        // Vibrant purple
-            STEP: '#94d82d',            // Bright lime green
-            RELU: '#51cf66',            // Bright green
-            SOFTSIGN: '#20c997',        // Vibrant teal/cyan
-            SINUSOID: '#b197fc',        // Light purple/violet
-            GAUSSIAN: '#a8e6cf',        // Mint green
-            BENT_IDENTITY: '#ffa94d',   // Peach/light orange
-            BIPOLAR: '#06b6d4',         // Bright cyan
-            BIPOLAR_SIGMOID: '#da77f2', // Magenta
-            HARD_TANH: '#f06595',       // Hot pink
-            ABSOLUTE: '#fd7e14',        // Deep orange
-            GATE: '#b5f236',            // Lime yellow-green
-            CONSTANT: '#74c0fc',        // Sky blue
-            INVERSE: '#ff6b9d',         // Coral pink
-            SELU: '#5c7cfa',            // Indigo blue
-            DEFAULT: '#868e96'          // Neutral gray
+            INPUT: '#4dabf7',
+            OUTPUT: '#ff6b6b',
+            LOGISTIC: '#ff922b',
+            TANH: '#ffd43b',
+            IDENTITY: '#9775fa',
+            STEP: '#94d82d',
+            RELU: '#51cf66',
+            SOFTSIGN: '#20c997',
+            SINUSOID: '#b197fc',
+            GAUSSIAN: '#a8e6cf',
+            BENT_IDENTITY: '#ffa94d',
+            BIPOLAR: '#06b6d4',
+            BIPOLAR_SIGMOID: '#da77f2',
+            HARD_TANH: '#f06595',
+            ABSOLUTE: '#fd7e14',
+            GATE: '#b5f236',
+            CONSTANT: '#74c0fc',
+            INVERSE: '#ff6b9d',
+            SELU: '#5c7cfa',
+            DEFAULT: '#868e96'
         },
 
         /**
-         * Assign layers using longest path algorithm (Sugiyama method)
-         * Each node's layer is determined by the longest path from any input to that node
-         * @param {Object} graph - Network graph data with nodes and links
-         * @returns {Object} Nodes organized by layer
+         * Assign layers using longest path algorithm (Sugiyama method).
          */
         assignLayersBySugiyama: function (graph) {
             var layers = {};
             var nodeToLayer = {};
 
-            // Initialize all nodes with layer -1 (unassigned)
-            graph.nodes.forEach(function (d) {
-                nodeToLayer[d.id] = -1;
-            });
+            graph.nodes.forEach(function (d) { nodeToLayer[d.id] = -1; });
 
-            // Build adjacency map for easier traversal
             var outgoing = {};
             var incoming = {};
             graph.nodes.forEach(function (d) {
@@ -76,7 +69,6 @@
                 incoming[targetId].push(sourceId);
             });
 
-            // Assign layer 0 to all input nodes
             var inputs = graph.nodes.filter(function (d) { return d.name === 'INPUT'; });
             inputs.forEach(function (d) {
                 nodeToLayer[d.id] = 0;
@@ -84,7 +76,6 @@
                 layers[0].push(d);
             });
 
-            // Propagate layers forward using longest path
             var visited = {};
             var queue = inputs.slice();
 
@@ -96,26 +87,19 @@
                 if (!visited[nodeId]) {
                     visited[nodeId] = true;
 
-                    // Visit all outgoing neighbors
                     outgoing[nodeId].forEach(function (targetId) {
                         var targetNode = graph.nodes.find(function (n) { return n.id === targetId; });
                         var newLayer = currentLayer + 1;
 
-                        // Update layer if this is a longer path
                         if (nodeToLayer[targetId] < newLayer) {
                             nodeToLayer[targetId] = newLayer;
-
-                            // Add to layers index
                             if (!layers[newLayer]) layers[newLayer] = [];
-                            // Remove from old layer if it was there
                             if (nodeToLayer[targetId] >= 0 && layers[nodeToLayer[targetId]]) {
                                 layers[nodeToLayer[targetId]] = layers[nodeToLayer[targetId]].filter(
                                     function (n) { return n.id !== targetId; }
                                 );
                             }
                             layers[newLayer].push(targetNode);
-
-                            // Add to queue to propagate further
                             if (queue.indexOf(targetNode) === -1) {
                                 queue.push(targetNode);
                             }
@@ -124,10 +108,8 @@
                 }
             }
 
-            // Assign unvisited/output nodes to their calculated layers
             graph.nodes.forEach(function (d) {
                 if (nodeToLayer[d.id] === -1) {
-                    // Nodes with no incoming edges from inputs
                     var maxIncomingLayer = -1;
                     incoming[d.id].forEach(function (sourceId) {
                         maxIncomingLayer = Math.max(maxIncomingLayer, nodeToLayer[sourceId]);
@@ -139,81 +121,70 @@
                 }
             });
 
-            return {
-                layers: layers,
-                nodeToLayer: nodeToLayer,
-                numLayers: Object.keys(layers).length
-            };
+            return { layers: layers, nodeToLayer: nodeToLayer, numLayers: Object.keys(layers).length };
         },
 
         /**
-         * Draw the network graph on an SVG element using D3 force layout
-         * @param {Object} graph - Network graph data with nodes and links
-         * @param {HTMLElement} panel - SVG element to draw on
+         * Calculate x positions per layer and assign initial node positions.
          */
-        draw: function (graph, panel) {
-            if (!graph || !graph.nodes || !panel) return;
-
-            var svg = d3.select(panel);
-            svg.selectAll('*').remove();
-
-            var width = panel.clientWidth || 400;
-            var height = panel.clientHeight || 450;
-
-            var self = this;
-
-            // Assign layers using Sugiyama algorithm
-            var layering = this.assignLayersBySugiyama(graph);
+        _applyLayerPositions: function (graph, layering, width, height) {
             var layers = layering.layers;
             var nodeToLayer = layering.nodeToLayer;
-            var numLayers = layering.numLayers;
-
-            // Calculate x positions for each layer (spread evenly across width)
             var layerPositions = {};
             var layerKeys = Object.keys(layers).map(function (k) { return parseInt(k); }).sort(function (a, b) { return a - b; });
 
             layerKeys.forEach(function (layerIndex, i) {
-                // Spread layers from left (15%) to right (85%)
                 var minX = width * 0.15;
                 var maxX = width * 0.85;
                 layerPositions[layerIndex] = minX + (maxX - minX) * (i / (layerKeys.length - 1 || 1));
             });
 
-            // Apply layer-based positioning
             graph.nodes.forEach(function (d) {
                 var layer = nodeToLayer[d.id];
                 d.fx = layerPositions[layer];
-                // Initialize y randomly within viewport
                 if (!d.y) {
                     d.y = Math.random() * (height * 0.7) + height * 0.15;
                 }
             });
 
-            // Link distance encourages separation between nodes in different layers
+            return layerPositions;
+        },
+
+        /**
+         * Create and configure the D3 force simulation.
+         */
+        _createSimulation: function (graph, layering, width, height) {
+            var self = this;
+            var nodeToLayer = layering.nodeToLayer;
+
             var linkForce = d3.forceLink(graph.links)
                 .id(function (d) { return d.id; })
                 .distance(function (d) {
                     var sourceLayer = nodeToLayer[typeof d.source === 'object' ? d.source.id : d.source];
                     var targetLayer = nodeToLayer[typeof d.target === 'object' ? d.target.id : d.target];
                     var layerDist = Math.abs(sourceLayer - targetLayer);
-                    // Edges between distant layers should be longer
                     return self.linkDistance * (0.8 + layerDist * 0.3);
                 });
 
-            // Strong repulsion to keep nodes separated within layers
             var chargeForce = d3.forceManyBody().strength(this.charge);
 
-            // Create force simulation (D3 v7 API)
-            var simulation = d3.forceSimulation(graph.nodes)
+            return d3.forceSimulation(graph.nodes)
                 .force('link', linkForce)
                 .force('charge', chargeForce)
                 .force('gravity', d3.forceCenter(width / 2, height / 2).strength(this.gravity))
                 .force('collision', d3.forceCollide().radius(function (d) {
-                    var baseRadius = d.name === 'GATE' ? self.gateRadius : self.nodeRadius;
-                    return baseRadius + 3;
+                    return (d.name === 'GATE' ? self.gateRadius : self.nodeRadius) + 3;
                 }));
+        },
 
-            // Define arrow marker
+        /**
+         * Render SVG elements (links, nodes, labels) and wire up tick/drag handlers.
+         */
+        _renderElements: function (svg, graph, layering, simulation, width, height) {
+            var self = this;
+            var nodeToLayer = layering.nodeToLayer;
+
+            // Arrow marker
             svg.append('defs').append('marker')
                 .attr('id', 'end-arrow')
                 .attr('viewBox', '0 -5 10 10')
@@ -225,7 +196,7 @@
                 .attr('d', 'M0,-5L10,0L0,5')
                 .attr('fill', this.theme.textMuted);
 
-            // Create link elements
+            // Links
             var link = svg.selectAll('.network-link')
                 .data(graph.links)
                 .enter()
@@ -234,51 +205,42 @@
                 .attr('fill', 'none')
                 .attr('marker-end', 'url(#end-arrow)');
 
-            // Add tooltips to links
             link.append('title')
                 .text(function (d) {
-                    var text = '';
-                    text += 'Weight: ' + (Math.round(d.weight * 1000) / 1000) + '\n';
                     var sourceIdx = d.source.index != null ? '(' + d.source.index + ')' : d.source.id;
                     var targetIdx = d.target.index != null ? '(' + d.target.index + ')' : d.target.id;
-                    text += 'From: ' + sourceIdx + '\n';
-                    text += 'To: ' + targetIdx;
-                    return text;
+                    return 'Weight: ' + (Math.round(d.weight * 1000) / 1000) + '\nFrom: ' + sourceIdx + '\nTo: ' + targetIdx;
                 });
 
-            // Create node elements
+            // Nodes
             var node = svg.selectAll('.network-node')
                 .data(graph.nodes)
                 .enter()
                 .append('circle')
-                .attr('class', function (d) {
-                    return 'network-node ' + d.name;
-                })
-                .attr('r', function (d) {
-                    return d.name === 'GATE' ? self.gateRadius : self.nodeRadius;
-                })
-                .attr('fill', function (d) {
-                    return self.activationColors[d.name] || self.activationColors.DEFAULT;
-                })
+                .attr('class', function (d) { return 'network-node ' + d.name; })
+                .attr('r', function (d) { return d.name === 'GATE' ? self.gateRadius : self.nodeRadius; })
+                .attr('fill', function (d) { return self.activationColors[d.name] || self.activationColors.DEFAULT; })
                 .attr('stroke', self.theme.border)
                 .attr('stroke-width', 2)
                 .call(d3.drag()
-                    .on('start', dragstarted)
-                    .on('drag', dragged)
-                    .on('end', dragended));
+                    .on('start', function (event, d) {
+                        if (!event.active) simulation.alphaTarget(0.3).restart();
+                        d.fy = d.y;
+                    })
+                    .on('drag', function (event, d) { d.fy = event.y; })
+                    .on('end', function (event, d) {
+                        if (!event.active) simulation.alphaTarget(0);
+                        d.fy = null;
+                    }));
 
-            // Add tooltips to nodes
             node.append('title')
                 .text(function (d) {
-                    var text = '';
-                    text += 'Activation: ' + (Math.round(d.activation * 1000) / 1000) + '\n';
-                    text += 'Bias: ' + (Math.round(d.bias * 1000) / 1000) + '\n';
-                    text += 'Layer: ' + nodeToLayer[d.id] + '\n';
-                    text += 'ID: ' + d.id;
-                    return text;
+                    return 'Activation: ' + (Math.round(d.activation * 1000) / 1000) +
+                        '\nBias: ' + (Math.round(d.bias * 1000) / 1000) +
+                        '\nLayer: ' + nodeToLayer[d.id] + '\nID: ' + d.id;
                 });
 
-            // Create type labels below nodes
+            // Type labels
             var typeLabel = svg.selectAll('.network-type-label')
                 .data(graph.nodes)
                 .enter()
@@ -289,11 +251,9 @@
                 .attr('font-size', '9px')
                 .attr('font-family', '"DM Sans", system-ui, sans-serif')
                 .attr('pointer-events', 'none')
-                .text(function (d) {
-                    return d.name;
-                });
+                .text(function (d) { return d.name; });
 
-            // Create node index labels
+            // Index labels
             var label = svg.selectAll('.network-label')
                 .data(graph.nodes)
                 .enter()
@@ -306,99 +266,73 @@
                 .attr('font-weight', 'bold')
                 .attr('font-family', '"DM Sans", system-ui, sans-serif')
                 .attr('pointer-events', 'none')
-                .text(function (d) {
-                    return d.index != null ? d.index : '';
-                });
+                .text(function (d) { return d.index != null ? d.index : ''; });
 
-            // Drag handlers
-            function dragstarted(event, d) {
-                if (!event.active) simulation.alphaTarget(0.3).restart();
-                d.fy = d.y;
-                // Keep x fixed to layer
-            }
-
-            function dragged(event, d) {
-                d.fy = event.y;
-                // x stays fixed
-            }
-
-            function dragended(event, d) {
-                if (!event.active) simulation.alphaTarget(0);
-                d.fy = null;
-            }
-
-            // Tick function: update positions
+            // Tick handler
             simulation.on('tick', function () {
-                // Update links
                 link.attr('d', function (d) {
-                    if (!d.source || !d.target || !isFinite(d.source.x) || !isFinite(d.target.x)) {
-                        return '';
-                    }
-
+                    if (!d.source || !d.target || !isFinite(d.source.x) || !isFinite(d.target.x)) return '';
                     var deltaX = d.target.x - d.source.x;
                     var deltaY = d.target.y - d.source.y;
-                    var dist = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-
-                    if (dist < 1) return '';
-
-                    var normX = deltaX / dist;
-                    var normY = deltaY / dist;
-
+                    var len = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+                    if (len < 1) return '';
+                    var nx = deltaX / len;
+                    var ny = deltaY / len;
                     var sourceRad = d.source.name === 'GATE' ? self.gateRadius : self.nodeRadius;
                     var targetRad = d.target.name === 'GATE' ? self.gateRadius : self.nodeRadius;
-
-                    var sourceX = d.source.x + normX * (sourceRad + 1);
-                    var sourceY = d.source.y + normY * (sourceRad + 1);
-                    var targetX = d.target.x - normX * (targetRad + 3);
-                    var targetY = d.target.y - normY * (targetRad + 3);
-
-                    return 'M' + sourceX + ',' + sourceY + 'L' + targetX + ',' + targetY;
+                    return 'M' + (d.source.x + nx * (sourceRad + 1)) + ',' + (d.source.y + ny * (sourceRad + 1)) +
+                           'L' + (d.target.x - nx * (targetRad + 3)) + ',' + (d.target.y - ny * (targetRad + 3));
                 });
 
-                // Color links by weight
                 link.attr('stroke', function (d) {
                     var weight = d.weight != null ? d.weight : 0;
-                    var absWeight = Math.abs(weight);
                     var hue = weight > 0 ? 200 : 0;
-                    return 'hsla(' + hue + ',60%,50%,' + Math.min(0.6, 0.2 + absWeight * 0.4) + ')';
-                })
-                    .attr('stroke-width', function (d) {
-                        var weight = d.weight != null ? d.weight : 0;
-                        return 1 + Math.abs(weight) * 1.5;
-                    });
+                    return 'hsla(' + hue + ',60%,50%,' + Math.min(0.6, 0.2 + Math.abs(weight) * 0.4) + ')';
+                }).attr('stroke-width', function (d) {
+                    return 1 + Math.abs(d.weight != null ? d.weight : 0) * 1.5;
+                });
 
-                // Update node positions
                 node.attr('cx', function (d) {
-                    var radius = d.name === 'GATE' ? self.gateRadius : self.nodeRadius;
-                    return d.x = Math.max(radius, Math.min(width - radius, d.x));
-                })
-                    .attr('cy', function (d) {
-                        var radius = d.name === 'GATE' ? self.gateRadius : self.nodeRadius;
-                        return d.y = Math.max(radius, Math.min(height - radius, d.y));
-                    });
+                    var r = d.name === 'GATE' ? self.gateRadius : self.nodeRadius;
+                    return d.x = Math.max(r, Math.min(width - r, d.x));
+                }).attr('cy', function (d) {
+                    var r = d.name === 'GATE' ? self.gateRadius : self.nodeRadius;
+                    return d.y = Math.max(r, Math.min(height - r, d.y));
+                });
 
-                // Update node index label positions
-                label.attr('x', function (d) {
-                    return d.x;
-                })
-                    .attr('y', function (d) {
-                        return d.y;
-                    });
+                label.attr('x', function (d) { return d.x; })
+                     .attr('y', function (d) { return d.y; });
 
-                // Update type label positions (below nodes)
-                typeLabel.attr('x', function (d) {
-                    return d.x;
-                })
-                    .attr('y', function (d) {
-                        var nodeRad = d.name === 'GATE' ? self.gateRadius : self.nodeRadius;
-                        return d.y + nodeRad + 12;
-                    });
+                typeLabel.attr('x', function (d) { return d.x; })
+                         .attr('y', function (d) {
+                             return d.y + (d.name === 'GATE' ? self.gateRadius : self.nodeRadius) + 12;
+                         });
             });
+        },
+
+        /**
+         * Draw the network graph on an SVG element.
+         */
+        draw: function (graph, panel) {
+            if (!graph || !graph.nodes || !panel) return;
+            if (typeof d3 === 'undefined') return;
+
+            try {
+                var svg = d3.select(panel);
+                svg.selectAll('*').remove();
+
+                var width = panel.clientWidth || 400;
+                var height = panel.clientHeight || 450;
+
+                var layering = this.assignLayersBySugiyama(graph);
+                this._applyLayerPositions(graph, layering, width, height);
+                var simulation = this._createSimulation(graph, layering, width, height);
+                this._renderElements(svg, graph, layering, simulation, width, height);
+            } catch (e) {
+                console.error('GraphRenderer.draw failed:', e);
+            }
         }
     };
 
-    // Export
-    if (typeof global !== 'undefined') {
-        global.GraphRenderer = GraphRenderer;
-    }
-})(typeof self !== 'undefined' ? self : typeof window !== 'undefined' ? window : this);
+    return GraphRenderer;
+})();

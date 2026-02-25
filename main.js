@@ -105,19 +105,20 @@ function readStateFromSAB() {
     var dataOffset = readIdx === 0 ? 2 : 2 + (bytesPerBuffer / 4);
     var n = i32[countOffset];
     if (n <= 0 || n > MAX) return [];
+    var F = layout.FIELD;
     var out = [];
     for (var i = 0; i < n; i++) {
         var base = dataOffset + i * FPA;
-        var genes = [f32[base + 7], f32[base + 8], f32[base + 9]];
-        var hp = f32[base + 10];
+        var genes = [f32[base + F.GENE_0], f32[base + F.GENE_1], f32[base + F.GENE_2]];
+        var hp = f32[base + F.HP];
         out.push({
-            x: f32[base],
-            y: f32[base + 1],
-            size: f32[base + 2],
-            r: f32[base + 3],
-            g: f32[base + 4],
-            b: f32[base + 5],
-            a: f32[base + 6],
+            x: f32[base + F.X],
+            y: f32[base + F.Y],
+            size: f32[base + F.SIZE],
+            r: f32[base + F.R],
+            g: f32[base + F.G],
+            b: f32[base + F.B],
+            a: f32[base + F.A],
             genes: genes,
             hp: hp,
             dna: { genes: genes }
@@ -137,7 +138,7 @@ function init() {
     useSAB = typeof SharedArrayBuffer !== 'undefined' && typeof SAB_LAYOUT !== 'undefined';
     if (useSAB) {
         try {
-            sharedBuffer = new SharedArrayBuffer(SAB_LAYOUT.getByteLength());
+            sharedBuffer = new SharedArrayBuffer(SAB_LAYOUT.BYTE_LENGTH);
         } catch (e) {
             useSAB = false;
             sharedBuffer = null;
@@ -182,7 +183,7 @@ function init() {
         obsRangeChart = charts.obsRangeChart;
         sampleCharts = charts.sample;
 
-        if (window.app.updateInspector) window.app.updateInspector(null);
+        Inspector.update(null);
 
         var canvasEl = Renderer.getCanvas && Renderer.getCanvas();
         if (canvasEl) {
@@ -218,7 +219,7 @@ function init() {
 function restart() {
     lastHoveredIndex = null;
     if (window.app) window.app.lockedWorldPos = null;
-    if (window.app.updateInspector) window.app.updateInspector(null);
+    Inspector.update(null);
     if (simulationWorker) {
         var dims = getCanvasDimensions();
         var msg = {
@@ -238,177 +239,64 @@ function restart() {
     }
 }
 
-var inspectorTooltips = {
-    size: 'Body size, health pool, and metabolic cost. Larger = more HP and bite radius, can eat smaller agents; pays more cost per timestep. Gene × sizeCoefficient → display size.',
-    agility: 'Agility codes for both movement speed and turn rate. Higher = faster movement and quicker turning. Gene × agilitySpeedCoefficient → speed; gene × agilityAngleCoefficient → angle change per step.',
-    observationRange: 'Raycast length gene. Longer range = more environmental info but higher energy cost per timestep.',
-    hp: 'Current health. Decreases each step from metabolic cost (size_gene × costCoefficient × dt) and observation cost; eating restores it (prey HP × eatCoefficient).'
-};
-
-var _inspectorGenesKey = null;
-var _inspectorHpFillEl = null;
-var _inspectorHpTextEl = null;
-var _inspectorRaycastsEl = null;
-var _inspectorLastHpFrac = null;
-var _inspectorLastHpText = null;
-var _inspectorLastRaycastKey = null;
-var _inspectorNetworkKey = null;
-var _inspectorNetworkJSON = null;
 var _minimapLastVpX = null;
 var _minimapLastVpY = null;
 var _minimapLastZoom = null;
 
-function renderInspectorNetwork(networkJSON) {
-    var netWrap = document.getElementById('inspectorNetworkWrap');
-    var netSvg = document.getElementById('inspectorNetwork');
-    if (!netWrap || !netSvg) return;
+var _worldMouseX = null;
+var _worldMouseY = null;
 
-    if (!networkJSON) return;
-
-    var net = neataptic.Network.fromJSON(networkJSON);
-    var graphData = net.graph(100, 100);
-
-    GraphRenderer.draw(graphData, netSvg);
-    netWrap.style.display = 'block';
+function buildInspectorData(d) {
+    return {
+        dna: { genes: d.genes },
+        hp: d.hp,
+        raycastResults: d.raycastResults,
+        networkJSON: d.networkJSON
+    };
 }
 
-function updateInspector(individual) {
-    var el = document.getElementById('inspectorContent');
-    if (!el) return;
+// Lightweight grid for O(1) amortized hover detection
+var _hoverGrid = null;
+var _hoverGridRef = null;
+var HOVER_CELL = 64;
 
-    if (!individual) {
-        _inspectorGenesKey = null;
-        _inspectorHpFillEl = null;
-        _inspectorHpTextEl = null;
-        _inspectorRaycastsEl = null;
-        _inspectorLastHpFrac = null;
-        _inspectorLastHpText = null;
-        _inspectorLastRaycastKey = null;
-        _inspectorNetworkKey = null;
-        el.innerHTML = '<p class="inspector-placeholder">Hover over an individual</p>';
-        var netWrap = document.getElementById('inspectorNetworkWrap');
-        var netStatus = document.getElementById('inspectorNetworkStatus');
-        if (netWrap) netWrap.style.display = 'none';
-        if (netStatus) netStatus.textContent = '';
-        return;
+function buildHoverGrid(individuals) {
+    var grid = {};
+    for (var i = 0; i < individuals.length; i++) {
+        var d = individuals[i];
+        var cx = Math.floor(d.x / HOVER_CELL);
+        var cy = Math.floor(d.y / HOVER_CELL);
+        var key = cx + ',' + cy;
+        if (!grid[key]) grid[key] = [];
+        grid[key].push(i);
     }
-
-    var g = individual.dna && individual.dna.genes ? individual.dna.genes : individual.genes;
-    if (!g) return;
-
-    var genesKey = g[0].toFixed(3) + '|' + g[1].toFixed(3) + '|' + (g[2] != null ? g[2].toFixed(3) : 'na');
-
-    // Rebuild static gene/network UI only when the selected agent changes
-    if (genesKey !== _inspectorGenesKey || !_inspectorHpFillEl || !_inspectorRaycastsEl) {
-        _inspectorGenesKey = genesKey;
-        _inspectorLastHpFrac = null;
-        _inspectorLastHpText = null;
-        _inspectorLastRaycastKey = null;
-        _inspectorNetworkKey = null;
-
-        var obsHtml = g[2] != null
-            ? '<dt>Observation range<span class="info-trigger" tabindex="0" role="button" aria-label="Observation range gene description"><span class="info-icon" aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">' +
-            (inspectorTooltips.observationRange || 'Raycast length gene. Longer range = more info but higher energy cost.') +
-            '</span></span></dt><dd>' + g[2].toFixed(3) + '</dd>'
-            : '';
-
-        el.innerHTML =
-            '<dl class="inspector-dl inspector-dl--genes">' +
-            '<dt>Size<span class="info-trigger" tabindex="0" role="button" aria-label="Size gene description"><span class="info-icon" aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">' + inspectorTooltips.size + '</span></span></dt><dd>' + g[0].toFixed(3) + '</dd>' +
-            '<dt>Agility<span class="info-trigger" tabindex="0" role="button" aria-label="Agility gene description"><span class="info-icon" aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">' + inspectorTooltips.agility + '</span></span></dt><dd>' + g[1].toFixed(3) + '</dd>' +
-            obsHtml +
-            '</dl>' +
-            '<div class="inspector-status">' +
-            '  <div class="inspector-hp-row">' +
-            '    <div class="inspector-hp-label">HP</div>' +
-            '    <div class="inspector-hp-body">' +
-            '      <div class="inspector-hp-bar"><div class="inspector-hp-bar-fill" id="inspectorHpFill"></div></div>' +
-            '      <div class="inspector-hp-text" id="inspectorHpText"></div>' +
-            '    </div>' +
-            '  </div>' +
-            '  <div class="inspector-raycasts-wrap">' +
-            '    <h3 class="inspector-raycasts-heading">Raycast detections</h3>' +
-            '    <div id="inspectorRaycasts" class="inspector-raycasts"></div>' +
-            '  </div>' +
-            '</div>';
-
-        _inspectorHpFillEl = document.getElementById('inspectorHpFill');
-        _inspectorHpTextEl = document.getElementById('inspectorHpText');
-        _inspectorRaycastsEl = document.getElementById('inspectorRaycasts');
-
-        if (genesKey !== _inspectorNetworkKey) {
-            _inspectorNetworkKey = genesKey;
-            renderInspectorNetwork(individual.networkJSON);
-        }
-    }
-
-    // Dynamic HP status — only write DOM if value changed
-    var sizeGene = g[0] != null ? g[0] : 0;
-    var maxHp = Math.max(1, Math.round(sizeGene * CONFIG.hpCoefficient));
-    var hp = individual.hp != null ? individual.hp : 0;
-    if (hp < 0) hp = 0;
-    if (hp > maxHp) hp = maxHp;
-
-    var frac = maxHp > 0 ? (hp / maxHp) : 0;
-    var hpFracStr = (Math.max(0, Math.min(1, frac)) * 100).toFixed(1) + '%';
-    var hpText = Math.round(hp) + ' / ' + maxHp;
-    if (_inspectorHpFillEl && hpFracStr !== _inspectorLastHpFrac) {
-        _inspectorHpFillEl.style.width = hpFracStr;
-        _inspectorLastHpFrac = hpFracStr;
-    }
-    if (_inspectorHpTextEl && hpText !== _inspectorLastHpText) {
-        _inspectorHpTextEl.textContent = hpText;
-        _inspectorLastHpText = hpText;
-    }
-
-    // Dynamic raycasts — only rebuild DOM if ray data changed
-    if (_inspectorRaycastsEl) {
-        var raycastResults = individual.raycastResults || [];
-        var raycastKey = '';
-        for (var i = 0; i < raycastResults.length; i++) {
-            var rk = raycastResults[i];
-            raycastKey += rk.type + ':' + (rk.normDist != null ? rk.normDist.toFixed(2) : '-') + '|';
-        }
-        if (raycastKey !== _inspectorLastRaycastKey) {
-            _inspectorLastRaycastKey = raycastKey;
-            if (!raycastResults.length) {
-                _inspectorRaycastsEl.innerHTML = '<p class="inspector-placeholder">No raycast detections</p>';
-            } else {
-                var maxRange = (g[2] != null ? g[2] : 0) * CONFIG.observationRangeCoefficient;
-                var html = '<table class="raycast-table"><tr><th>Ray</th><th>Type</th><th>Dist</th></tr>';
-                for (var i = 0; i < raycastResults.length; i++) {
-                    var r = raycastResults[i];
-                    var typeStr = r.type === 0 ? 'Empty' : (r.type === 0.5 ? 'Wall' : 'Agent');
-                    var cell;
-                    if (r.normDist == null || !maxRange) {
-                        cell = '-';
-                    } else {
-                        var fraction = Math.max(0, Math.min(1, r.normDist));
-                        var distAbs = Math.round(fraction * maxRange);
-                        var emptyClass = r.type === 0 ? ' raycast-bar--empty' : '';
-                        cell = '<div class="raycast-bar' + emptyClass + '"><div class="raycast-bar-fill" style="width:' +
-                            (fraction * 100) + '%"></div><span class="raycast-bar-text">' +
-                            distAbs + ' / ' + Math.round(maxRange) + '</span></div>';
-                    }
-                    html += '<tr><td>' + (i + 1) + '</td><td>' + typeStr + '</td><td>' + cell + '</td></tr>';
-                }
-                html += '</table>';
-                _inspectorRaycastsEl.innerHTML = html;
-            }
-        }
-    }
+    return grid;
 }
-
-var _mouseX = null;
-var _mouseY = null;
-
 
 function findIndividualAt(worldX, worldY) {
     var individuals = window.app.currentIndividuals;
-    for (var i = 0; i < individuals.length; i++) {
-        var d = individuals[i];
-        if (dist({ x: worldX, y: worldY }, { x: d.x, y: d.y }) < d.size / 2) {
-            return i;
+    if (!individuals || individuals.length === 0) return null;
+
+    // Rebuild grid when the array reference changes
+    if (individuals !== _hoverGridRef) {
+        _hoverGridRef = individuals;
+        _hoverGrid = buildHoverGrid(individuals);
+    }
+
+    var cx = Math.floor(worldX / HOVER_CELL);
+    var cy = Math.floor(worldY / HOVER_CELL);
+    for (var dx = -1; dx <= 1; dx++) {
+        for (var dy = -1; dy <= 1; dy++) {
+            var key = (cx + dx) + ',' + (cy + dy);
+            var bucket = _hoverGrid[key];
+            if (!bucket) continue;
+            for (var k = 0; k < bucket.length; k++) {
+                var idx = bucket[k];
+                var d = individuals[idx];
+                if (dist({ x: worldX, y: worldY }, { x: d.x, y: d.y }) < d.size / 2) {
+                    return idx;
+                }
+            }
         }
     }
     return null;
@@ -439,7 +327,7 @@ function updateLockedHighlight() {
         window.app.lockedWorldPos = null;
         lastHoveredIndex = null;
         Renderer.setHovered(null);
-        if (window.app.updateInspector) window.app.updateInspector(null);
+        Inspector.update(null);
         return;
     }
     var individuals = window.app.currentIndividuals;
@@ -463,37 +351,22 @@ function updateLockedHighlight() {
         Renderer.setHovered(idx);
     }
 
-    if (window.app.updateInspector) {
-        window.app.updateInspector({
-            dna: { genes: d.genes },
-            hp: d.hp,
-            raycastResults: d.raycastResults,
-            networkJSON: d.networkJSON
-        });
-    }
+    Inspector.update(buildInspectorData(d));
 }
 
 function hoverCheck() {
     if (window.app.lockedWorldPos) return; // lock tracking handled by updateLockedHighlight
     var foundIndex = null;
-    if (_mouseX != null && _mouseY != null) {
-        foundIndex = findIndividualAt(_mouseX, _mouseY);
+    if (_worldMouseX != null && _worldMouseY != null) {
+        foundIndex = findIndividualAt(_worldMouseX, _worldMouseY);
     }
     if (foundIndex !== lastHoveredIndex) {
         lastHoveredIndex = foundIndex;
         Renderer.setHovered(foundIndex);
-        if (window.app.updateInspector) {
-            if (foundIndex == null) {
-                window.app.updateInspector(null);
-            } else {
-                var drawable = window.app.currentIndividuals[foundIndex];
-                window.app.updateInspector({
-                    dna: { genes: drawable.genes },
-                    hp: drawable.hp,
-                    raycastResults: drawable.raycastResults,
-                    networkJSON: drawable.networkJSON
-                });
-            }
+        if (foundIndex == null) {
+            Inspector.update(null);
+        } else {
+            Inspector.update(buildInspectorData(window.app.currentIndividuals[foundIndex]));
         }
     }
 }
@@ -561,9 +434,9 @@ var Minimap = {
         var h = this.height;
         var scaleX = w / mapW;
         var scaleY = h / mapH;
-        this.ctx.fillStyle = '#25262b';
+        this.ctx.fillStyle = THEME.minimapBg;
         this.ctx.fillRect(0, 0, w, h);
-        this.ctx.strokeStyle = '#373a40';
+        this.ctx.strokeStyle = THEME.minimapBorder;
         this.ctx.strokeRect(0, 0, w, h);
         var visW = canvasW / zoom;
         var visH = canvasH / zoom;
@@ -571,14 +444,15 @@ var Minimap = {
         var ry = viewportY * scaleY;
         var rw = visW * scaleX;
         var rh = visH * scaleY;
-        this.ctx.strokeStyle = 'rgba(77, 171, 247, 0.9)';
+        this.ctx.strokeStyle = THEME.minimapViewport;
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(rx, ry, rw, rh);
-        this.ctx.fillStyle = 'rgba(77, 171, 247, 0.15)';
+        this.ctx.fillStyle = THEME.minimapViewFill;
         this.ctx.fillRect(rx, ry, rw, rh);
         for (var i = 0; i < agents.length; i++) {
             var a = agents[i];
-            var g = a.dna && a.dna.genes ? a.dna.genes : (a.genes || [0.5, 0.5, 0.5]);
+            var g = getGenes(a);
+            if (!g.length) g = [0.5, 0.5, 0.5];
             var b = (g[2] != null ? g[2] : 0.5);
             this.ctx.fillStyle = 'rgb(' + Math.round(g[0] * 255) + ',' + Math.round(g[1] * 255) + ',' + Math.round(b * 255) + ')';
             var sx = a.x * scaleX;
@@ -592,7 +466,6 @@ var Minimap = {
 
 window.app = {
     restart: restart,
-    updateInspector: updateInspector,
     startSimulationLoop: startSimulationLoop,
     setPaused: setPaused,
     simTime: 0,
@@ -618,12 +491,11 @@ window.app = {
             window.app._panStart = { x: e.clientX, y: e.clientY };
             return;
         }
-        var zoom = Renderer.getZoom ? Renderer.getZoom() : 1;
-        var vp = Renderer.getViewport ? Renderer.getViewport() : { x: 0, y: 0 };
         var normX = (e.clientX - rect.left) / rect.width;
         var normY = (e.clientY - rect.top) / rect.height;
-        _mouseX = vp.x + normX * (cw / zoom);
-        _mouseY = vp.y + normY * (ch / zoom);
+        var world = Renderer.screenToWorld(normX, normY);
+        _worldMouseX = world.x;
+        _worldMouseY = world.y;
         hoverCheck();
     },
     _onMouseDown: function (e) {
@@ -642,10 +514,10 @@ window.app = {
             if (canvasEl) canvasEl.style.cursor = 'grab';
             return;
         }
-        var mx = _mouseX;
-        var my = _mouseY;
-        if (mx == null || my == null) return;
-        var idx = findIndividualAt(mx, my);
+        var worldX = _worldMouseX;
+        var worldY = _worldMouseY;
+        if (worldX == null || worldY == null) return;
+        var idx = findIndividualAt(worldX, worldY);
         if (window.app.lockedWorldPos) {
             var lockedIdx = findLockedIndividual();
             if (idx != null && idx === lockedIdx) {
@@ -657,43 +529,28 @@ window.app = {
                 window.app.lockedWorldPos = { x: ind.x, y: ind.y };
                 lastHoveredIndex = idx;
                 Renderer.setHovered(idx);
-                if (window.app.updateInspector) {
-                    window.app.updateInspector({
-                        dna: { genes: ind.genes },
-                        hp: ind.hp,
-                        raycastResults: ind.raycastResults,
-                        networkJSON: ind.networkJSON
-                    });
-                }
+                Inspector.update(buildInspectorData(ind));
             } else {
                 window.app.lockedWorldPos = null;
                 lastHoveredIndex = null;
                 Renderer.setHovered(null);
-                if (window.app.updateInspector) window.app.updateInspector(null);
+                Inspector.update(null);
             }
         } else if (idx != null) {
             var ind = window.app.currentIndividuals[idx];
             window.app.lockedWorldPos = { x: ind.x, y: ind.y };
             lastHoveredIndex = idx;
             Renderer.setHovered(idx);
-            if (window.app.updateInspector) {
-                ind = window.app.currentIndividuals[idx];
-                window.app.updateInspector({
-                    dna: { genes: ind.genes },
-                    hp: ind.hp,
-                    raycastResults: ind.raycastResults,
-                    networkJSON: ind.networkJSON
-                });
-            }
+            Inspector.update(buildInspectorData(ind));
         }
     },
     _onMouseLeave: function () {
-        _mouseX = null;
-        _mouseY = null;
+        _worldMouseX = null;
+        _worldMouseY = null;
         window.app._panStart = null;
         if (!window.app.lockedWorldPos) {
             Renderer.setHovered(null);
-            if (window.app.updateInspector) window.app.updateInspector(null);
+            Inspector.update(null);
             lastHoveredIndex = null;
         }
     },

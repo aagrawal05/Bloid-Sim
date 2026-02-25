@@ -20,8 +20,10 @@ var Renderer = (function () {
     var targetViewportY = 0;
     var mapWidth = 3200;
     var mapHeight = 2400;
-    var zoomLerpSpeed = 0.18;
+    var ZOOM_LERP_SPEED = 0.18;
     var ZOOM_LEVELS = [0.25, 0.35, 0.5, 0.71, 1, 1.41, 2, 2.83, 4];
+    var ARROW_LEN = 12;
+    var ARROW_WIDTH = 6;
 
     function rgbToHex(r, g, b) {
         r = Math.max(0, Math.min(255, Math.round(r)));
@@ -33,10 +35,10 @@ var Renderer = (function () {
     function drawGrid() {
         if (!gridGraphics || !worldContainer) return;
         gridGraphics.clear();
-        var minorCell = 100;
-        var majorCell = 500;
-        var lineColor = 0x444444;
-        var lineAlpha = 0.5;
+        var minorCell = THEME.gridMinorCell;
+        var majorCell = THEME.gridMajorCell;
+        var lineColor = THEME.gridLineHex;
+        var lineAlpha = THEME.gridLineAlpha;
         var cw = app.renderer.width;
         var ch = app.renderer.height;
         var visW = cw / zoomLevel;
@@ -46,7 +48,7 @@ var Renderer = (function () {
         var endX = Math.min(mapWidth, viewportX + visW + minorCell);
         var endY = Math.min(mapHeight, viewportY + visH + minorCell);
 
-        gridGraphics.beginFill(0x25262b);
+        gridGraphics.beginFill(THEME.gridBgHex);
         gridGraphics.drawRect(0, 0, mapWidth, mapHeight);
         gridGraphics.endFill();
 
@@ -96,15 +98,12 @@ var Renderer = (function () {
 
         if (hoveredIndex != null && hoveredIndex >= 0 && hoveredIndex < currentState.length) {
             var h = currentState[hoveredIndex];
-            graphics.lineStyle(2, 0xffffff, 1);
+            graphics.lineStyle(2, THEME.hoverOutlineHex, 1);
             graphics.drawCircle(h.x, h.y, h.size / 2 + 2);
             graphics.lineStyle(0);
             if (h.raycastResults && h.raycastResults.length > 0 && typeof h.raycastLength === 'number') {
                 var angle = typeof h.angle === 'number' ? h.angle : 0;
                 var len = h.raycastLength || 150;
-                var emptyColor = 0x6c757d;
-                var wallColor = 0xfd7e14;
-                var agentColor = 0xdc3545;
                 var forwardRayEndX = h.x;
                 var forwardRayEndY = h.y;
                 for (var ri = 0; ri < h.raycastResults.length; ri++) {
@@ -113,8 +112,8 @@ var Renderer = (function () {
                     var dist = (r.normDist != null ? r.normDist : 1) * len;
                     var endX = h.x + Math.cos(rayAngle) * dist;
                     var endY = h.y + Math.sin(rayAngle) * dist;
-                    var lineColor = r.type === 0 ? emptyColor : (r.type === 0.5 ? wallColor : agentColor);
-                    var lineAlpha = r.type === 0 ? 0.4 : 0.9;
+                    var lineColor = r.type === 0 ? THEME.rayEmptyHex : (r.type === 0.5 ? THEME.rayWallHex : THEME.rayAgentHex);
+                    var lineAlpha = r.type === 0 ? THEME.rayEmptyAlpha : THEME.rayHitAlpha;
                     graphics.lineStyle(2, lineColor, lineAlpha);
                     graphics.moveTo(h.x, h.y);
                     graphics.lineTo(endX, endY);
@@ -123,8 +122,8 @@ var Renderer = (function () {
                         forwardRayEndY = endY;
                     }
                 }
-                var arrowLen = 12;
-                var arrowWidth = 6;
+                var arrowLen = ARROW_LEN;
+                var arrowWidth = ARROW_WIDTH;
                 var tipX = forwardRayEndX;
                 var tipY = forwardRayEndY;
                 var backX = tipX - arrowLen * Math.cos(angle);
@@ -133,8 +132,8 @@ var Renderer = (function () {
                 var leftY = backY - arrowWidth * Math.cos(angle);
                 var rightX = backX - arrowWidth * Math.sin(angle);
                 var rightY = backY + arrowWidth * Math.cos(angle);
-                graphics.lineStyle(2, 0xffffff, 0.95);
-                graphics.beginFill(0xffffff, 0.6);
+                graphics.lineStyle(2, THEME.arrowFillHex, 0.95);
+                graphics.beginFill(THEME.arrowFillHex, 0.6);
                 graphics.moveTo(tipX, tipY);
                 graphics.lineTo(leftX, leftY);
                 graphics.lineTo(rightX, rightY);
@@ -157,10 +156,10 @@ var Renderer = (function () {
 
     function updateCamera() {
         if (!worldContainer || !app) return;
-        zoomLevel += (targetZoom - zoomLevel) * zoomLerpSpeed;
+        zoomLevel += (targetZoom - zoomLevel) * ZOOM_LERP_SPEED;
         if (Math.abs(zoomLevel - targetZoom) < 0.001) zoomLevel = targetZoom;
-        viewportX += (targetViewportX - viewportX) * zoomLerpSpeed;
-        viewportY += (targetViewportY - viewportY) * zoomLerpSpeed;
+        viewportX += (targetViewportX - viewportX) * ZOOM_LERP_SPEED;
+        viewportY += (targetViewportY - viewportY) * ZOOM_LERP_SPEED;
         if (Math.abs(viewportX - targetViewportX) < 0.5) viewportX = targetViewportX;
         if (Math.abs(viewportY - targetViewportY) < 0.5) viewportY = targetViewportY;
         clampViewport();
@@ -200,7 +199,7 @@ var Renderer = (function () {
             var h = containerEl.clientHeight || 480;
             if (typeof PIXI === 'undefined') { if (callback) callback(); return; }
             try {
-                app = new PIXI.Application({ width: w, height: h, background: 0x000000 });
+                app = new PIXI.Application({ width: w, height: h, background: THEME.canvasBgHex });
                 var view = app.canvas || app.view;
                 if (view) {
                     view.style.display = 'block';
@@ -318,6 +317,15 @@ var Renderer = (function () {
 
         getHeight: function () {
             return app && app.renderer ? app.renderer.height : 0;
+        },
+
+        screenToWorld: function (normX, normY) {
+            var cw = app ? app.renderer.width : 0;
+            var ch = app ? app.renderer.height : 0;
+            return {
+                x: viewportX + normX * (cw / zoomLevel),
+                y: viewportY + normY * (ch / zoomLevel)
+            };
         }
     };
 })();

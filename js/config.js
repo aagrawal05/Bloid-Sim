@@ -41,3 +41,31 @@ const CONSTANTS = {
   canvasWidth: 640,
   canvasHeight: 480,
 };
+
+// Visual theme constants – centralizes all hardcoded colors and grid sizes
+var THEME = {
+  // Canvas / renderer
+  canvasBgHex:      0x000000,
+  gridBgHex:        0x25262b,
+  gridLineHex:      0x444444,
+  gridLineAlpha:    0.5,
+  gridMinorCell:    100,
+  gridMajorCell:    500,
+
+  // Hover / selection
+  hoverOutlineHex:  0xffffff,
+  arrowFillHex:     0xffffff,
+
+  // Raycast visualization
+  rayEmptyHex:      0x6c757d,
+  rayWallHex:       0xfd7e14,
+  rayAgentHex:      0xdc3545,
+  rayEmptyAlpha:    0.4,
+  rayHitAlpha:      0.9,
+
+  // Minimap
+  minimapBg:        '#25262b',
+  minimapBorder:    '#373a40',
+  minimapViewport:  'rgba(77, 171, 247, 0.9)',
+  minimapViewFill:  'rgba(77, 171, 247, 0.15)',
+};
