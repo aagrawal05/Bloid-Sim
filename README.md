@@ -6,37 +6,40 @@
 
 *Blob-shaped blobs doing blob things.* Watch colorful bloids wobble, chase, munch, and evolve in a 2D arena—survival of the chunkiest, fastest, and wiggliest. Drop in, tweak the sliders, and see who thrives.
 
-Under the hood: a browser-based predator–prey evolution simulation. Each bloid carries three heritable genes (**size**, **speed**, **angular speed**), moves around a toroidal arena, consumes smaller bloids to gain health, reproduces with mutation, and dies when health hits zero. The population evolves over time—you just set the stage.
+Under the hood: a browser-based predator–prey evolution simulation. Each bloid carries heritable genes (**size**, **agility**, **observation range**) plus a **behaviour policy** (NEAT neural network), moves around a bounded arena, consumes smaller bloids to gain health, reproduces with mutation, and dies when health hits zero. The population evolves over time—you just set the stage.
 
 ---
 
 ## 🎮 The simulation
 
-- **🔄 Arena** – Toroidal canvas (agents wrap at edges). Each timestep, in order:
+- **🔄 Arena** – Bounded canvas (agents bounce at walls). Each timestep, in order:
   1. **🍽️ Eating** – For every pair, if agent A is close enough (distance &lt; A’s radius) and A is **compareCoefficient** times larger than B, A eats B: A gains `eatCoefficient × B’s HP`, B is removed.
-  2. **🏃 Movement & metabolism** – Each agent updates its angle (random wiggle bounded by its angular speed), moves in that direction at its speed, then loses HP at a rate proportional to its **size** (metabolic cost).
-  3. **👶 Reproduction** – Each agent has a chance `reproductionRate × dt` to produce one offspring. The child gets a copy of the parent’s DNA, then each gene may **mutate** (replace with a random value in [min, 1]) with probability **mutationRate**.
-  4. **💀 Death** – Agents with HP ≤ 0 are removed. If the population ever hits zero, the sim restarts with **initialPopulation** new random agents.
+  2. **👁️ Raycasts** – Each agent casts 8 rays uniformly (length = observation range gene × observationRangeCoefficient). Each ray detects Empty, Wall, or Agent.
+  3. **🏃 Movement & metabolism** – Each agent's neural network takes raycast inputs and outputs movement controls. The agent moves accordingly, then loses HP from metabolic cost (size) and observation cost.
+  4. **👶 Reproduction** – Each agent has a chance `reproductionRate × dt` to produce one offspring. The child gets a copy of the parent's DNA (genes mutate) and a mutated copy of the parent's neural network.
+  5. **💀 Death** – Agents with HP ≤ 0 are removed. If the population ever hits zero, the sim restarts with **initialPopulation** new random agents.
 
-**🖱️ Hover** over an individual on the canvas to highlight it (white border) and see its genes and HP in the **Inspector** panel (right drawer, below Parameters). The charts show population over time and the evolution of each gene (average, min, max).
+
+**🖱️ Hover** over an individual on the canvas to highlight it (white border) and see its genes, HP, raycast detections, and behaviour network in the **Inspector** panel (right drawer, below Parameters). The charts show population over time and the evolution of each gene (average, min, max).
 
 ---
 
-## 🧪 The three genes
+## 🧪 Genes and behaviour policy
 
-Each agent’s DNA is three numbers in **[0, 1]** (with minimums 0.1, 0.1, 0 for the three genes). They map to phenotype via global coefficients (sliders).
+Each agent’s DNA is three numbers in **[0, 1]** (plus a neural network). They map to phenotype via global coefficients (sliders).
 
 | Gene | Index | What it controls | Phenotype |
 |------|--------|-------------------|-----------|
 | **Size** | 0 | Body size, health pool, metabolic cost | `size = gene × sizeCoefficient`, `hp = gene × hpCoefficient`, cost per dt = `gene × costCoefficient × dt` |
-| **Speed** | 1 | Movement speed (pixels per time) | `speed = gene × speedCoefficient` |
-| **Angular speed** | 2 | Turn rate (how much the heading can change per timestep) | `angleSpeed = gene × 2π` (radians per timestep) |
+| **Agility** | 1 | Movement speed and turn rate | `speed = gene × agilitySpeedCoefficient`, `angleSpeed = gene × agilityAngleCoefficient` |
+| **Observation range** | 2 | Raycast length, energy cost | `raycastLength = gene × observationRangeCoefficient`, observation cost ∝ raycastLength |
+| **Behaviour** | — | Movement policy | NEAT neural network: 16 inputs, 2 outputs. Evolves via mutation on reproduction. |
 
 - **📏 Size** – Larger agents have more HP and a larger “bite” radius, and can eat smaller ones (size ratio &gt; **compareCoefficient**). They also pay more metabolic cost per timestep, so they must eat to survive. **Tradeoff:** big = tanky and able to eat more, but burns HP faster and can be outmaneuvered by small, fast agents.
-- **⚡ Speed** – How fast the agent moves. No direct cost; higher speed helps chase prey or flee. **Tradeoff:** fast agents cover more ground and can catch or escape others; slow ones save no energy (cost is size-based) but are easier to catch or miss.
-- **🌀 Angular speed** – How much the heading randomly wobbles each step. **Tradeoff:** high = erratic, can change direction quickly to chase or dodge; low = straighter paths, more predictable movement.
+- **⚡ Agility** – Codes for both linear speed and angular turn rate. No direct cost; higher speed helps chase prey or flee. **Tradeoff:** fast agents cover more ground and can catch or escape others; slow ones save no energy (cost is size-based) but are easier to catch or miss.
+- **👁️ Observation range** – Raycast length. Longer range = more environmental info. **Tradeoff:** longer range costs more HP per timestep.
 
-🎨 Color on the canvas is gene-based: red = size, green = speed, blue = angular speed (RGB from the three genes), with opacity reflecting current HP.
+🎨 Color on the canvas is gene-based: red = size, green = agility, blue = observation range (RGB from the three genes), with opacity reflecting current HP.
 
 ---
 
@@ -59,7 +62,10 @@ Each agent’s DNA is three numbers in **[0, 1]** (with minimums 0.1, 0.1, 0 for
 | **Eat** (`eatCoefficient`) | 1–2 | Fraction of prey’s HP transferred to the eater. | &gt; 1 = eating is very rewarding; 1 = one-to-one transfer. |
 | **Compare** (`compareCoefficient`) | 1–2 | Size ratio required to eat: eater must be at least **compareCoefficient** × prey’s size. | Higher = only much larger agents can eat smaller ones (stricter hierarchy); lower = more similar-sized predation. |
 | **Cost** (`costCoefficient`) | 10–25 | Metabolic drain per timestep = size_gene × costCoefficient × dt. | Higher = big agents die faster without food; lower = size is less penalized. |
-| **Speed coef.** (`speedCoefficient`) | 450–550 | Multiplier for the speed gene → movement speed. | Higher = speed gene has more impact; together with cost, this shapes the size–speed tradeoff. |
+| **Agility (speed)** (`agilitySpeedCoefficient`) | 450–550 | Multiplier for the agility gene → movement speed. | Higher = agility has more impact on linear speed. |
+| **Agility (angle)** (`agilityAngleCoefficient`) | 1–8 | Multiplier for the agility gene → turn rate (radians per step). | Higher = quicker turning. |
+| **Observation range coef.** (`observationRangeCoefficient`) | 50–500 | Multiplier for the observation range gene → raycast length in pixels. | Higher = agents see farther; higher observation cost. |
+| **Observation cost** (`observationCostCoefficient`) | 0.1–2 | Energy drain per timestep for observation = obsCost × (raycastLength/150) × dt. | Higher = longer range costs more HP. |
 
 ### 🖥️ Display & run control
 
@@ -67,6 +73,7 @@ Each agent’s DNA is three numbers in **[0, 1]** (with minimums 0.1, 0.1, 0 for
 |------------------------|--------|
 | **FPS** (`fps`) | Simulation frame rate (1–240). Affects temporal resolution and performance. |
 | **Speed** (`simulationSpeed`) | Global time multiplier (1–10×). Same run, faster wall-clock time. |
+| **Play/Pause** | Pauses the simulation (effective speed 0) and chart data collection. Use **Spacebar** or the header button. |
 | **Restart** | Resets the population to **initialPopulation** new random agents; coefficients and rates are unchanged. |
 
 ---
@@ -149,6 +156,17 @@ Without COOP/COEP (e.g. generic static server), `SharedArrayBuffer` is not avail
 - **js/dna.js** – `DNA(inheritedGenes)` (genes, `mutate()`).
 - **js/individual.js** – `Individual(initialPosition, dna)` (movement, eating, reproduction, `toDrawable()`, `run(dt)`). No drawing; renderer uses drawable state.
 - **js/population.js** – `Population(populationSize)` (individuals list, `run(dt)`, `eat(individuals)`).
-- **js/charts.js** – Population and gene charts (size, speed, angular speed). Gene charts use data-driven y-axis scaling.
+- **js/charts.js** – Population and gene charts (size, agility, observation range). Gene charts use data-driven y-axis scaling.
+- **js/raycast.js** – Raycast system: 8 rays, Empty/Wall/Agent detection, optimized with spatial index.
+- **js/behaviour-network.js** – NEAT behaviour policy: create network, inherit+mutation, raycast-to-input, activate for movement.
+- **js/spatial-hash.js** – Spatial hash for broad-phase collision and raycast queries.
 
-📦 Dependencies (CDN): PixiJS, Chart.js, Luxon, chartjs-adapter-luxon, chartjs-plugin-streaming. Simulation worker uses `js/math-utils.js` via `importScripts`. When run via `node server.js`, SharedArrayBuffer is used for zero-copy state transfer between worker and main thread.
+📦 Dependencies (CDN): PixiJS, Chart.js, Luxon, chartjs-adapter-luxon, chartjs-plugin-streaming, neataptic, D3.js, WebCola. Simulation worker uses `js/math-utils.js`, `js/raycast.js`, `js/behaviour-network.js` via `importScripts`. When run via `node server.js`, SharedArrayBuffer is used for zero-copy state transfer between worker and main thread. **Note:** When using SharedArrayBuffer mode, the Inspector does not show raycast detections or network visualization (fixed SAB layout); use postMessage mode (e.g. `npx serve .`) to see full Inspector data.
+
+---
+
+## 💡 Ideas (future enhancements)
+
+- **Agent gene inspection** – When a raycast detects "Agent", consider allowing the network to receive information about that agent's genes (e.g. size, agility). This could enable richer behaviour (e.g. chase smaller, flee larger).
+- **Raycast distribution and count** – Genes controlling the number of raycasts and their angular distribution, with energy tradeoffs: more rays or wider spread = higher observation cost.
+- **Sexual reproduction** – Combine two parents' neural networks via `Network.crossOver()` for offspring, rather than asexual clone-and-mutate. Would require mate selection and crossover logic.

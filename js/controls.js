@@ -33,7 +33,10 @@
     bindSlider('Slider', 'fps', 'fps', function (v) { return String(Math.round(v)); }, undefined, function () {
       if (window.app && typeof window.app.startSimulationLoop === 'function') window.app.startSimulationLoop();
     });
-    bindSlider('simSlider', 'speed', 'simulationSpeed', function (v) { return (Math.round(v * 10) / 10).toFixed(1) + 'x'; }, simulationSpeedTransform);
+    bindSlider('simSlider', 'speed', 'simulationSpeed', function (v) {
+      if (window.app && window.app.paused) return 'Paused';
+      return (Math.round(v * 10) / 10).toFixed(1) + 'x';
+    }, simulationSpeedTransform);
     bindSlider('size', 'sizeSpan', 'sizeCoefficient');
     bindSlider('mutation', 'mutationSpan', 'mutationRate');
     bindSlider('reproduction', 'reproductionSpan', 'reproductionRate');
@@ -41,7 +44,10 @@
     bindSlider('eat', 'eatSpan', 'eatCoefficient');
     bindSlider('compare', 'compareSpan', 'compareCoefficient');
     bindSlider('cost', 'costSpan', 'costCoefficient');
-    bindSlider('speedC', 'speedCSpan', 'speedCoefficient');
+    bindSlider('speedC', 'speedCSpan', 'agilitySpeedCoefficient');
+    bindSlider('angleC', 'angleCSpan', 'agilityAngleCoefficient', function (v) { return v.toFixed(2); });
+    bindSlider('obsRangeC', 'obsRangeCSpan', 'observationRangeCoefficient', function (v) { return String(Math.round(v)); });
+    bindSlider('obsCost', 'obsCostSpan', 'observationCostCoefficient', function (v) { return v.toFixed(2); });
     bindSlider('initial', 'initialSpan', 'initialPopulation', function (v) { return String(Math.round(v)); });
     bindSlider('mapWidth', 'mapWidthSpan', 'mapWidth', function (v) { return String(Math.round(v)); }, undefined, function () {
       if (Renderer && Renderer.setMapSize) Renderer.setMapSize(CONFIG.mapWidth, CONFIG.mapHeight);
@@ -49,6 +55,7 @@
     bindSlider('mapHeight', 'mapHeightSpan', 'mapHeight', function (v) { return String(Math.round(v)); }, undefined, function () {
       if (Renderer && Renderer.setMapSize) Renderer.setMapSize(CONFIG.mapWidth, CONFIG.mapHeight);
     });
+    bindSlider('statsTick', 'statsTickSpan', 'statsSampleInterval', function (v) { return v.toFixed(2) + 's'; });
 
     var spatialSelect = get('spatialIndex');
     if (spatialSelect) {
@@ -67,6 +74,25 @@
         }
       });
     }
+
+    var playPauseButton = get('playPauseBtn');
+    if (playPauseButton) {
+      playPauseButton.addEventListener('click', function () {
+        if (window.app && typeof window.app.setPaused === 'function') {
+          window.app.setPaused(!window.app.paused);
+        }
+      });
+    }
+
+    document.addEventListener('keydown', function (e) {
+      if (e.code !== 'Space' && e.key !== ' ') return;
+      var tag = e.target && (e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      e.preventDefault();
+      if (window.app && typeof window.app.setPaused === 'function') {
+        window.app.setPaused(!window.app.paused);
+      }
+    });
   }
 
   if (document.readyState === 'loading') {

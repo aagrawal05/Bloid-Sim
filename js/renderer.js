@@ -41,27 +41,43 @@ var Renderer = (function () {
         var ch = app.renderer.height;
         var visW = cw / zoomLevel;
         var visH = ch / zoomLevel;
-        var startX = Math.floor(viewportX / minorCell) * minorCell;
-        var startY = Math.floor(viewportY / minorCell) * minorCell;
+        var startX = Math.max(0, Math.floor(viewportX / minorCell) * minorCell);
+        var startY = Math.max(0, Math.floor(viewportY / minorCell) * minorCell);
         var endX = Math.min(mapWidth, viewportX + visW + minorCell);
         var endY = Math.min(mapHeight, viewportY + visH + minorCell);
 
+        gridGraphics.beginFill(0x25262b);
+        gridGraphics.drawRect(0, 0, mapWidth, mapHeight);
+        gridGraphics.endFill();
+
         var minorLineWidth = Math.max(0.5, 1 / zoomLevel);
         var majorLineWidth = Math.max(1, 2.5 / zoomLevel);
+        var clipY1 = Math.max(0, viewportY);
+        var clipY2 = Math.min(mapHeight, viewportY + visH);
+        var clipX1 = Math.max(0, viewportX);
+        var clipX2 = Math.min(mapWidth, viewportX + visW);
 
-        gridGraphics.lineStyle(minorLineWidth, lineColor, lineAlpha);
-        for (var x = startX; x < endX; x += minorCell) {
-            for (var y = startY; y < endY; y += minorCell) {
-                gridGraphics.drawRect(x, y, minorCell, minorCell);
+        function drawVerticalLines(step, lw, color, alpha) {
+            gridGraphics.lineStyle(lw, color, alpha);
+            for (var x = Math.floor(viewportX / step) * step; x <= mapWidth; x += step) {
+                if (x < clipX1 - step || x > clipX2 + step) continue;
+                gridGraphics.moveTo(x, clipY1);
+                gridGraphics.lineTo(x, clipY2);
+            }
+        }
+        function drawHorizontalLines(step, lw, color, alpha) {
+            gridGraphics.lineStyle(lw, color, alpha);
+            for (var y = Math.floor(viewportY / step) * step; y <= mapHeight; y += step) {
+                if (y < clipY1 - step || y > clipY2 + step) continue;
+                gridGraphics.moveTo(clipX1, y);
+                gridGraphics.lineTo(clipX2, y);
             }
         }
 
-        gridGraphics.lineStyle(majorLineWidth, lineColor, Math.min(1, lineAlpha + 0.2));
-        for (var x = Math.floor(viewportX / majorCell) * majorCell; x < endX; x += majorCell) {
-            for (var y = Math.floor(viewportY / majorCell) * majorCell; y < endY; y += majorCell) {
-                gridGraphics.drawRect(x, y, majorCell, majorCell);
-            }
-        }
+        drawVerticalLines(minorCell, minorLineWidth, lineColor, lineAlpha);
+        drawHorizontalLines(minorCell, minorLineWidth, lineColor, lineAlpha);
+        drawVerticalLines(majorCell, majorLineWidth, lineColor, Math.min(1, lineAlpha + 0.2));
+        drawHorizontalLines(majorCell, majorLineWidth, lineColor, Math.min(1, lineAlpha + 0.2));
         gridGraphics.lineStyle(0);
     }
 
@@ -83,6 +99,49 @@ var Renderer = (function () {
             graphics.lineStyle(2, 0xffffff, 1);
             graphics.drawCircle(h.x, h.y, h.size / 2 + 2);
             graphics.lineStyle(0);
+            if (h.raycastResults && h.raycastResults.length > 0 && typeof h.raycastLength === 'number') {
+                var angle = typeof h.angle === 'number' ? h.angle : 0;
+                var len = h.raycastLength || 150;
+                var emptyColor = 0x6c757d;
+                var wallColor = 0xfd7e14;
+                var agentColor = 0xdc3545;
+                var forwardRayEndX = h.x;
+                var forwardRayEndY = h.y;
+                for (var ri = 0; ri < h.raycastResults.length; ri++) {
+                    var r = h.raycastResults[ri];
+                    var rayAngle = angle + (ri / h.raycastResults.length) * Math.PI * 2;
+                    var dist = (r.normDist != null ? r.normDist : 1) * len;
+                    var endX = h.x + Math.cos(rayAngle) * dist;
+                    var endY = h.y + Math.sin(rayAngle) * dist;
+                    var lineColor = r.type === 0 ? emptyColor : (r.type === 0.5 ? wallColor : agentColor);
+                    var lineAlpha = r.type === 0 ? 0.4 : 0.9;
+                    graphics.lineStyle(2, lineColor, lineAlpha);
+                    graphics.moveTo(h.x, h.y);
+                    graphics.lineTo(endX, endY);
+                    if (ri === 0) {
+                        forwardRayEndX = endX;
+                        forwardRayEndY = endY;
+                    }
+                }
+                var arrowLen = 12;
+                var arrowWidth = 6;
+                var tipX = forwardRayEndX;
+                var tipY = forwardRayEndY;
+                var backX = tipX - arrowLen * Math.cos(angle);
+                var backY = tipY - arrowLen * Math.sin(angle);
+                var leftX = backX + arrowWidth * Math.sin(angle);
+                var leftY = backY - arrowWidth * Math.cos(angle);
+                var rightX = backX - arrowWidth * Math.sin(angle);
+                var rightY = backY + arrowWidth * Math.cos(angle);
+                graphics.lineStyle(2, 0xffffff, 0.95);
+                graphics.beginFill(0xffffff, 0.6);
+                graphics.moveTo(tipX, tipY);
+                graphics.lineTo(leftX, leftY);
+                graphics.lineTo(rightX, rightY);
+                graphics.closePath();
+                graphics.endFill();
+                graphics.lineStyle(0);
+            }
         }
     }
 
@@ -141,7 +200,7 @@ var Renderer = (function () {
             var h = containerEl.clientHeight || 480;
             if (typeof PIXI === 'undefined') { if (callback) callback(); return; }
             try {
-                app = new PIXI.Application({ width: w, height: h, background: 0x333333 });
+                app = new PIXI.Application({ width: w, height: h, background: 0x000000 });
                 var view = app.canvas || app.view;
                 if (view) {
                     view.style.display = 'block';

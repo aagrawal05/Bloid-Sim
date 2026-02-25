@@ -1,4 +1,6 @@
-var populationChart, sizeChart, speedChart, angleSpeedChart;
+var populationChart, sizeChart, agilityChart, obsRangeChart;
+var sampleCharts = null;
+var lastSampleSimTime = 0;
 var lastHoveredIndex = null;
 var simulationWorker = null;
 var tickIntervalId = null;
@@ -37,8 +39,20 @@ function sendWorkerInit() {
 
 function sendWorkerTick() {
     if (!simulationWorker) return;
+    if (window.app && window.app.paused) return;
     var dims = getCanvasDimensions();
-    var dt = CONFIG.simulationSpeed / CONFIG.fps;
+    var effectiveSpeed = CONFIG.simulationSpeed;
+    var dt = effectiveSpeed / CONFIG.fps;
+    window.app.simTime += dt;
+    if (typeof sampleCharts === 'function') {
+        var interval = (CONFIG.statsSampleInterval || 1);
+        if (interval <= 0) interval = 1;
+        // Sample charts at most once per configured simulated interval
+        if (window.app.simTime - lastSampleSimTime >= interval) {
+            lastSampleSimTime = window.app.simTime;
+            sampleCharts(window.app.simTime);
+        }
+    }
     simulationWorker.postMessage({
         type: 'tick',
         dt: dt,
@@ -52,9 +66,29 @@ function sendWorkerTick() {
 }
 
 function startSimulationLoop() {
+    if (window.app && window.app.paused) return;
     if (tickIntervalId) clearInterval(tickIntervalId);
     var fps = Math.max(1, Math.min(240, CONFIG.fps));
     tickIntervalId = setInterval(sendWorkerTick, 1000 / fps);
+}
+
+function setPaused(paused) {
+    if (!window.app) return;
+    window.app.paused = !!paused;
+    var speedSpan = document.getElementById('speed');
+    var playPauseBtn = document.getElementById('playPauseBtn');
+    var icon = playPauseBtn && playPauseBtn.querySelector('i');
+    if (paused) {
+        if (tickIntervalId) { clearInterval(tickIntervalId); tickIntervalId = null; }
+        if (speedSpan) speedSpan.textContent = 'Paused';
+        if (icon) { icon.classList.remove('fa-pause'); icon.classList.add('fa-play'); }
+        if (playPauseBtn) { playPauseBtn.setAttribute('aria-label', 'Play simulation'); playPauseBtn.title = 'Play (Space)'; }
+    } else {
+        startSimulationLoop();
+        if (speedSpan) speedSpan.textContent = (Math.round(CONFIG.simulationSpeed * 10) / 10).toFixed(1) + 'x';
+        if (icon) { icon.classList.remove('fa-play'); icon.classList.add('fa-pause'); }
+        if (playPauseBtn) { playPauseBtn.setAttribute('aria-label', 'Pause simulation'); playPauseBtn.title = 'Pause (Space)'; }
+    }
 }
 
 function readStateFromSAB() {
@@ -144,8 +178,9 @@ function init() {
         var charts = Charts.createAll(getPopulation);
         populationChart = charts.populationChart;
         sizeChart = charts.sizeChart;
-        speedChart = charts.speedChart;
-        angleSpeedChart = charts.angleSpeedChart;
+        agilityChart = charts.agilityChart;
+        obsRangeChart = charts.obsRangeChart;
+        sampleCharts = charts.sample;
 
         if (window.app.updateInspector) window.app.updateInspector(null);
 
@@ -182,6 +217,7 @@ function init() {
 
 function restart() {
     lastHoveredIndex = null;
+    if (window.app) window.app.lockedWorldPos = null;
     if (window.app.updateInspector) window.app.updateInspector(null);
     if (simulationWorker) {
         var dims = getCanvasDimensions();
@@ -204,59 +240,283 @@ function restart() {
 
 var inspectorTooltips = {
     size: 'Body size, health pool, and metabolic cost. Larger = more HP and bite radius, can eat smaller agents; pays more cost per timestep. Gene × sizeCoefficient → display size.',
-    speed: 'Movement speed in pixels per time. Higher = chase or flee faster. No direct cost; gene × speedCoefficient.',
-    angularSpeed: 'Turn rate (heading wobble per step). Higher = more erratic movement; lower = straighter paths. Gene × 2π radians per step.',
-    hp: 'Current health. Decreases each step from metabolic cost (size_gene × costCoefficient × dt); eating restores it (prey HP × eatCoefficient).'
+    agility: 'Agility codes for both movement speed and turn rate. Higher = faster movement and quicker turning. Gene × agilitySpeedCoefficient → speed; gene × agilityAngleCoefficient → angle change per step.',
+    observationRange: 'Raycast length gene. Longer range = more environmental info but higher energy cost per timestep.',
+    hp: 'Current health. Decreases each step from metabolic cost (size_gene × costCoefficient × dt) and observation cost; eating restores it (prey HP × eatCoefficient).'
 };
+
+var _inspectorGenesKey = null;
+var _inspectorHpFillEl = null;
+var _inspectorHpTextEl = null;
+var _inspectorRaycastsEl = null;
+var _inspectorLastHpFrac = null;
+var _inspectorLastHpText = null;
+var _inspectorLastRaycastKey = null;
+var _inspectorNetworkKey = null;
+var _minimapLastVpX = null;
+var _minimapLastVpY = null;
+var _minimapLastZoom = null;
+
+function renderInspectorNetwork(networkJSON) {
+    var netWrap = document.getElementById('inspectorNetworkWrap');
+    var netStatus = document.getElementById('inspectorNetworkStatus');
+    var netSvg = document.getElementById('inspectorNetwork');
+    if (!netWrap || !netSvg) return;
+
+    function clearNetworkSvg() {
+        if (typeof d3 !== 'undefined') {
+            d3.select('#inspectorNetwork').selectAll('*').remove();
+        }
+    }
+
+    var hasNeataptic = (typeof neataptic !== 'undefined' && neataptic && neataptic.Network);
+    var hasDrawGraph = (typeof drawGraph === 'function');
+    var isSAB = !!useSAB;
+
+    if (!networkJSON) {
+        netWrap.style.display = 'block';
+        clearNetworkSvg();
+        if (netStatus) {
+            if (isSAB) {
+                netStatus.textContent = 'Network visualization is not available in SharedArrayBuffer (performance) mode. Run without COOP/COEP headers to view behaviour networks.';
+            } else {
+                netStatus.textContent = 'No behaviour network data is available yet for this agent.';
+            }
+        }
+        return;
+    }
+
+    if (!hasNeataptic || !hasDrawGraph) {
+        netWrap.style.display = 'block';
+        clearNetworkSvg();
+        if (netStatus) {
+            netStatus.textContent = 'Neural network visualization scripts (neataptic graph + D3/WebCola) did not load, so the behaviour network cannot be drawn.';
+        }
+        return;
+    }
+
+    try {
+        var net = neataptic.Network.fromJSON(networkJSON);
+        var graphData = net.graph(320, 200);
+        clearNetworkSvg();
+        drawGraph(graphData, '#inspectorNetwork');
+        netWrap.style.display = 'block';
+        if (netStatus) netStatus.textContent = '';
+    } catch (e) {
+        netWrap.style.display = 'block';
+        clearNetworkSvg();
+        if (netStatus) {
+            netStatus.textContent = 'An error occurred while rendering the behaviour network for this agent.';
+            console.error('Network rendering error:', e);
+        }
+    }
+}
 
 function updateInspector(individual) {
     var el = document.getElementById('inspectorContent');
     if (!el) return;
+
     if (!individual) {
+        _inspectorGenesKey = null;
+        _inspectorHpFillEl = null;
+        _inspectorHpTextEl = null;
+        _inspectorRaycastsEl = null;
+        _inspectorLastHpFrac = null;
+        _inspectorLastHpText = null;
+        _inspectorLastRaycastKey = null;
+        _inspectorNetworkKey = null;
         el.innerHTML = '<p class="inspector-placeholder">Hover over an individual</p>';
+        var netWrap = document.getElementById('inspectorNetworkWrap');
+        var netStatus = document.getElementById('inspectorNetworkStatus');
+        if (netWrap) netWrap.style.display = 'none';
+        if (netStatus) netStatus.textContent = '';
         return;
     }
+
     var g = individual.dna && individual.dna.genes ? individual.dna.genes : individual.genes;
-    var hp = individual.hp;
     if (!g) return;
-    el.innerHTML =
-        '<dl class="inspector-dl">' +
-        '<dt>Size<span class="info-trigger" tabindex="0" role="button" aria-label="Size gene description"><span class="info-icon" aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">' + inspectorTooltips.size + '</span></span></dt><dd>' + g[0].toFixed(3) + '</dd>' +
-        '<dt>Speed<span class="info-trigger" tabindex="0" role="button" aria-label="Speed gene description"><span class="info-icon" aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">' + inspectorTooltips.speed + '</span></span></dt><dd>' + g[1].toFixed(3) + '</dd>' +
-        '<dt>Angular speed<span class="info-trigger" tabindex="0" role="button" aria-label="Angular speed gene description"><span class="info-icon" aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">' + inspectorTooltips.angularSpeed + '</span></span></dt><dd>' + g[2].toFixed(3) + '</dd>' +
-        '<dt>HP<span class="info-trigger" tabindex="0" role="button" aria-label="HP description"><span class="info-icon" aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">' + inspectorTooltips.hp + '</span></span></dt><dd>' + hp + '</dd>' +
-        '</dl>';
+
+    var genesKey = g[0].toFixed(3) + '|' + g[1].toFixed(3) + '|' + (g[2] != null ? g[2].toFixed(3) : 'na');
+
+    // Rebuild static gene/network UI only when the selected agent changes
+    if (genesKey !== _inspectorGenesKey || !_inspectorHpFillEl || !_inspectorRaycastsEl) {
+        _inspectorGenesKey = genesKey;
+        _inspectorLastHpFrac = null;
+        _inspectorLastHpText = null;
+        _inspectorLastRaycastKey = null;
+        _inspectorNetworkKey = null;
+
+        var obsHtml = g[2] != null
+            ? '<dt>Observation range<span class="info-trigger" tabindex="0" role="button" aria-label="Observation range gene description"><span class="info-icon" aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">' +
+            (inspectorTooltips.observationRange || 'Raycast length gene. Longer range = more info but higher energy cost.') +
+            '</span></span></dt><dd>' + g[2].toFixed(3) + '</dd>'
+            : '';
+
+        el.innerHTML =
+            '<dl class="inspector-dl inspector-dl--genes">' +
+            '<dt>Size<span class="info-trigger" tabindex="0" role="button" aria-label="Size gene description"><span class="info-icon" aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">' + inspectorTooltips.size + '</span></span></dt><dd>' + g[0].toFixed(3) + '</dd>' +
+            '<dt>Agility<span class="info-trigger" tabindex="0" role="button" aria-label="Agility gene description"><span class="info-icon" aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">' + inspectorTooltips.agility + '</span></span></dt><dd>' + g[1].toFixed(3) + '</dd>' +
+            obsHtml +
+            '</dl>' +
+            '<div class="inspector-status">' +
+            '  <div class="inspector-hp-row">' +
+            '    <div class="inspector-hp-label">HP</div>' +
+            '    <div class="inspector-hp-body">' +
+            '      <div class="inspector-hp-bar"><div class="inspector-hp-bar-fill" id="inspectorHpFill"></div></div>' +
+            '      <div class="inspector-hp-text" id="inspectorHpText"></div>' +
+            '    </div>' +
+            '  </div>' +
+            '  <div class="inspector-raycasts-wrap">' +
+            '    <h3 class="inspector-raycasts-heading">Raycast detections</h3>' +
+            '    <div id="inspectorRaycasts" class="inspector-raycasts"></div>' +
+            '  </div>' +
+            '</div>';
+
+        _inspectorHpFillEl = document.getElementById('inspectorHpFill');
+        _inspectorHpTextEl = document.getElementById('inspectorHpText');
+        _inspectorRaycastsEl = document.getElementById('inspectorRaycasts');
+
+        if (genesKey !== _inspectorNetworkKey) {
+            _inspectorNetworkKey = genesKey;
+            renderInspectorNetwork(individual.networkJSON);
+        }
+    }
+
+    // Dynamic HP status — only write DOM if value changed
+    var sizeGene = g[0] != null ? g[0] : 0;
+    var maxHp = Math.max(1, Math.round(sizeGene * CONFIG.hpCoefficient));
+    var hp = individual.hp != null ? individual.hp : 0;
+    if (hp < 0) hp = 0;
+    if (hp > maxHp) hp = maxHp;
+
+    var frac = maxHp > 0 ? (hp / maxHp) : 0;
+    var hpFracStr = (Math.max(0, Math.min(1, frac)) * 100).toFixed(1) + '%';
+    var hpText = Math.round(hp) + ' / ' + maxHp;
+    if (_inspectorHpFillEl && hpFracStr !== _inspectorLastHpFrac) {
+        _inspectorHpFillEl.style.width = hpFracStr;
+        _inspectorLastHpFrac = hpFracStr;
+    }
+    if (_inspectorHpTextEl && hpText !== _inspectorLastHpText) {
+        _inspectorHpTextEl.textContent = hpText;
+        _inspectorLastHpText = hpText;
+    }
+
+    // Dynamic raycasts — only rebuild DOM if ray data changed
+    if (_inspectorRaycastsEl) {
+        var raycastResults = individual.raycastResults || [];
+        var raycastKey = '';
+        for (var i = 0; i < raycastResults.length; i++) {
+            var rk = raycastResults[i];
+            raycastKey += rk.type + ':' + (rk.normDist != null ? rk.normDist.toFixed(2) : '-') + '|';
+        }
+        if (raycastKey !== _inspectorLastRaycastKey) {
+            _inspectorLastRaycastKey = raycastKey;
+            if (!raycastResults.length) {
+                _inspectorRaycastsEl.innerHTML = '<p class="inspector-placeholder">No raycast detections</p>';
+            } else {
+                var maxRange = (g[2] != null ? g[2] : 0) * CONFIG.observationRangeCoefficient;
+                var html = '<table class="raycast-table"><tr><th>Ray</th><th>Type</th><th>Dist</th></tr>';
+                for (var i = 0; i < raycastResults.length; i++) {
+                    var r = raycastResults[i];
+                    var typeStr = r.type === 0 ? 'Empty' : (r.type === 0.5 ? 'Wall' : 'Agent');
+                    var cell;
+                    if (r.normDist == null || !maxRange) {
+                        cell = '-';
+                    } else {
+                        var fraction = Math.max(0, Math.min(1, r.normDist));
+                        var distAbs = Math.round(fraction * maxRange);
+                        cell = '<div class="raycast-bar"><div class="raycast-bar-fill" style="width:' +
+                            (fraction * 100) + '%"></div><span class="raycast-bar-text">' +
+                            distAbs + ' / ' + Math.round(maxRange) + '</span></div>';
+                    }
+                    html += '<tr><td>' + (i + 1) + '</td><td>' + typeStr + '</td><td>' + cell + '</td></tr>';
+                }
+                html += '</table>';
+                _inspectorRaycastsEl.innerHTML = html;
+            }
+        }
+    }
 }
 
 var _mouseX = null;
 var _mouseY = null;
 
-function screenToWorld(screenX, screenY) {
-    var canvasEl = Renderer.getCanvas && Renderer.getCanvas();
-    if (!canvasEl) return { x: 0, y: 0 };
-    var rect = canvasEl.getBoundingClientRect();
+
+function findIndividualAt(worldX, worldY) {
+    var individuals = window.app.currentIndividuals;
+    for (var i = 0; i < individuals.length; i++) {
+        var d = individuals[i];
+        if (dist({ x: worldX, y: worldY }, { x: d.x, y: d.y }) < d.size / 2) {
+            return i;
+        }
+    }
+    return null;
+}
+
+function findLockedIndividual() {
+    if (!window.app || !window.app.lockedWorldPos) return null;
+    var individuals = window.app.currentIndividuals;
+    var lp = window.app.lockedWorldPos;
+    var bestIdx = null;
+    var bestDist = Infinity;
+    var maxRadius = 150;
+    for (var i = 0; i < individuals.length; i++) {
+        var d = individuals[i];
+        var d2 = dist(lp, { x: d.x, y: d.y });
+        if (d2 < bestDist && d2 < maxRadius) {
+            bestDist = d2;
+            bestIdx = i;
+        }
+    }
+    return bestIdx;
+}
+
+function updateLockedHighlight() {
+    if (!window.app || !window.app.lockedWorldPos) return;
+    var idx = findLockedIndividual();
+    if (idx == null) {
+        window.app.lockedWorldPos = null;
+        lastHoveredIndex = null;
+        Renderer.setHovered(null);
+        if (window.app.updateInspector) window.app.updateInspector(null);
+        return;
+    }
+    var individuals = window.app.currentIndividuals;
+    var d = individuals[idx];
+    window.app.lockedWorldPos = { x: d.x, y: d.y };
+
+    // Center the camera on the locked individual
     var cw = Renderer.getWidth();
     var ch = Renderer.getHeight();
     var zoom = Renderer.getZoom ? Renderer.getZoom() : 1;
-    var vp = Renderer.getViewport ? Renderer.getViewport() : { x: 0, y: 0 };
-    var normX = (screenX - rect.left) / rect.width;
-    var normY = (screenY - rect.top) / rect.height;
-    return {
-        x: vp.x + normX * (cw / zoom),
-        y: vp.y + normY * (ch / zoom)
-    };
+    if (cw > 0 && ch > 0 && zoom > 0) {
+        var visW = cw / zoom;
+        var visH = ch / zoom;
+        var vx = d.x - visW / 2;
+        var vy = d.y - visH / 2;
+        Renderer.setViewport(vx, vy);
+    }
+
+    if (lastHoveredIndex !== idx) {
+        lastHoveredIndex = idx;
+        Renderer.setHovered(idx);
+    }
+
+    if (window.app.updateInspector) {
+        window.app.updateInspector({
+            dna: { genes: d.genes },
+            hp: d.hp,
+            raycastResults: d.raycastResults,
+            networkJSON: d.networkJSON
+        });
+    }
 }
 
 function hoverCheck() {
-    if (_mouseX == null || _mouseY == null) return;
-    var individuals = window.app.currentIndividuals;
+    if (window.app.lockedWorldPos) return; // lock tracking handled by updateLockedHighlight
     var foundIndex = null;
-    for (var i = 0; i < individuals.length; i++) {
-        var d = individuals[i];
-        if (dist({ x: _mouseX, y: _mouseY }, { x: d.x, y: d.y }) < d.size / 2) {
-            foundIndex = i;
-            break;
-        }
+    if (_mouseX != null && _mouseY != null) {
+        foundIndex = findIndividualAt(_mouseX, _mouseY);
     }
     if (foundIndex !== lastHoveredIndex) {
         lastHoveredIndex = foundIndex;
@@ -265,8 +525,13 @@ function hoverCheck() {
             if (foundIndex == null) {
                 window.app.updateInspector(null);
             } else {
-                var drawable = individuals[foundIndex];
-                window.app.updateInspector({ dna: { genes: drawable.genes }, hp: drawable.hp });
+                var drawable = window.app.currentIndividuals[foundIndex];
+                window.app.updateInspector({
+                    dna: { genes: drawable.genes },
+                    hp: drawable.hp,
+                    raycastResults: drawable.raycastResults,
+                    networkJSON: drawable.networkJSON
+                });
             }
         }
     }
@@ -353,7 +618,8 @@ var Minimap = {
         for (var i = 0; i < agents.length; i++) {
             var a = agents[i];
             var g = a.dna && a.dna.genes ? a.dna.genes : (a.genes || [0.5, 0.5, 0.5]);
-            this.ctx.fillStyle = 'rgb(' + Math.round(g[0] * 255) + ',' + Math.round(g[1] * 255) + ',' + Math.round(g[2] * 255) + ')';
+            var b = (g[2] != null ? g[2] : 0.5);
+            this.ctx.fillStyle = 'rgb(' + Math.round(g[0] * 255) + ',' + Math.round(g[1] * 255) + ',' + Math.round(b * 255) + ')';
             var sx = a.x * scaleX;
             var sy = a.y * scaleY;
             this.ctx.beginPath();
@@ -367,10 +633,11 @@ window.app = {
     restart: restart,
     updateInspector: updateInspector,
     startSimulationLoop: startSimulationLoop,
-    hoveredIndividual: null,
-    mouseSketchX: null,
-    mouseSketchY: null,
+    setPaused: setPaused,
+    simTime: 0,
+    paused: false,
     currentIndividuals: [],
+    lockedWorldPos: null,
     panMode: false,
     zoomMode: false,
     _panStart: null,
@@ -412,24 +679,80 @@ window.app = {
             window.app._panStart = null;
             var canvasEl = Renderer.getCanvas && Renderer.getCanvas();
             if (canvasEl) canvasEl.style.cursor = 'grab';
+            return;
+        }
+        var mx = _mouseX;
+        var my = _mouseY;
+        if (mx == null || my == null) return;
+        var idx = findIndividualAt(mx, my);
+        if (window.app.lockedWorldPos) {
+            var lockedIdx = findLockedIndividual();
+            if (idx != null && idx === lockedIdx) {
+                window.app.lockedWorldPos = null;
+                lastHoveredIndex = idx;
+                hoverCheck();
+            } else if (idx != null) {
+                var ind = window.app.currentIndividuals[idx];
+                window.app.lockedWorldPos = { x: ind.x, y: ind.y };
+                lastHoveredIndex = idx;
+                Renderer.setHovered(idx);
+                if (window.app.updateInspector) {
+                    window.app.updateInspector({
+                        dna: { genes: ind.genes },
+                        hp: ind.hp,
+                        raycastResults: ind.raycastResults,
+                        networkJSON: ind.networkJSON
+                    });
+                }
+            } else {
+                window.app.lockedWorldPos = null;
+                lastHoveredIndex = null;
+                Renderer.setHovered(null);
+                if (window.app.updateInspector) window.app.updateInspector(null);
+            }
+        } else if (idx != null) {
+            var ind = window.app.currentIndividuals[idx];
+            window.app.lockedWorldPos = { x: ind.x, y: ind.y };
+            lastHoveredIndex = idx;
+            Renderer.setHovered(idx);
+            if (window.app.updateInspector) {
+                ind = window.app.currentIndividuals[idx];
+                window.app.updateInspector({
+                    dna: { genes: ind.genes },
+                    hp: ind.hp,
+                    raycastResults: ind.raycastResults,
+                    networkJSON: ind.networkJSON
+                });
+            }
         }
     },
     _onMouseLeave: function () {
         _mouseX = null;
         _mouseY = null;
         window.app._panStart = null;
-        Renderer.setHovered(null);
-        if (window.app.updateInspector) window.app.updateInspector(null);
-        lastHoveredIndex = null;
+        if (!window.app.lockedWorldPos) {
+            Renderer.setHovered(null);
+            if (window.app.updateInspector) window.app.updateInspector(null);
+            lastHoveredIndex = null;
+        }
     },
     _minimapLoop: function () {
+        // When paused nothing moves — skip camera tracking and inspector updates
+        if (window.app.lockedWorldPos && !window.app.paused) updateLockedHighlight();
         if (Minimap.canvas && Renderer.getViewport) {
             var vp = Renderer.getViewport();
             var zoom = Renderer.getZoom();
-            var mapSize = Renderer.getMapSize ? Renderer.getMapSize() : { w: CONFIG.mapWidth, h: CONFIG.mapHeight };
-            var cw = Renderer.getWidth();
-            var ch = Renderer.getHeight();
-            Minimap.draw(window.app.currentIndividuals, vp.x, vp.y, zoom, mapSize.w, mapSize.h, cw, ch);
+            var vpChanged = vp.x !== _minimapLastVpX || vp.y !== _minimapLastVpY || zoom !== _minimapLastZoom;
+            // When running: redraw every frame (agents move). When paused: redraw only if viewport changed.
+            if (!window.app.paused || vpChanged) {
+                var mapSize = Renderer.getMapSize ? Renderer.getMapSize() : { w: CONFIG.mapWidth, h: CONFIG.mapHeight };
+                var cw = Renderer.getWidth();
+                var ch = Renderer.getHeight();
+                Minimap.draw(window.app.currentIndividuals, vp.x, vp.y, zoom, mapSize.w, mapSize.h, cw, ch);
+                _minimapLastVpX = vp.x;
+                _minimapLastVpY = vp.y;
+                _minimapLastZoom = zoom;
+            }
         }
         requestAnimationFrame(window.app._minimapLoop);
     }

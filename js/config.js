@@ -6,6 +6,8 @@ const CONFIG = {
   // Display / loop
   fps: 60,
   simulationSpeed: 1.0,
+  // Seconds of simulated time between stats/chart samples
+  statsSampleInterval: 1.0,
 
   // Genetics & population
   mutationRate: 0.1,
@@ -21,18 +23,21 @@ const CONFIG = {
 
   // Coefficients (map genes to world)
   sizeCoefficient: 50,
-  speedCoefficient: 500,
+  agilitySpeedCoefficient: 500,
+  agilityAngleCoefficient: 2 * Math.PI,
   hpCoefficient: 100,
   eatCoefficient: 1,
   compareCoefficient: 1.25,
   costCoefficient: 18.5,
+  observationRangeCoefficient: 300,
+  observationCostCoefficient: 0.5,
 };
 
 // Constants (not changed by UI) – viewport size; map is CONFIG.mapWidth × CONFIG.mapHeight
 const CONSTANTS = {
   minSize: 0.1,
-  minSpeed: 0.1,
-  minAngleSpeed: 0.0,
+  minAgility: 0.1,
+  minObservationRange: 0.1,
   canvasWidth: 640,
   canvasHeight: 480,
 };

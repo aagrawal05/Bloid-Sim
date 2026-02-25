@@ -5,6 +5,9 @@
  */
 importScripts('math-utils.js');
 importScripts('spatial-hash.js');
+importScripts('raycast.js');
+try { importScripts('https://cdnjs.cloudflare.com/ajax/libs/neataptic/1.4.0/neataptic.min.js'); } catch (e) { /* neataptic optional */ }
+try { importScripts('behaviour-network.js'); } catch (e) { /* behaviour-network optional */ }
 try { importScripts('https://unpkg.com/js-quadtree'); } catch (e) { /* quadtree optional; fallback to brute force */ }
 
 var cfg = {};
@@ -19,8 +22,8 @@ function WorkerDNA(inheritedGenes) {
     } else {
         this.genes = [
             random(cst.minSize, 1),
-            random(cst.minSpeed, 1),
-            random(cst.minAngleSpeed, 1),
+            random(cst.minAgility, 1),
+            random(cst.minObservationRange, 1),
         ];
     }
 }
@@ -30,27 +33,54 @@ WorkerDNA.prototype.mutate = function () {
         if (random() < cfg.mutationRate) {
             switch (i) {
                 case 0: this.genes[i] = random(cst.minSize, 1); break;
-                case 1: this.genes[i] = random(cst.minSpeed, 1); break;
-                case 2: this.genes[i] = random(cst.minAngleSpeed, 1); break;
+                case 1: this.genes[i] = random(cst.minAgility, 1); break;
+                case 2: this.genes[i] = random(cst.minObservationRange, 1); break;
             }
         }
     }
 };
 
-function WorkerIndividual(initialPosition, dna) {
+function WorkerIndividual(initialPosition, dna, parentNetwork) {
     this.position = initialPosition;
     this.dna = dna != null ? dna : new WorkerDNA();
     this.size = Math.floor(this.dna.genes[0] * cfg.sizeCoefficient);
-    this.speed = Math.floor(this.dna.genes[1] * cfg.speedCoefficient);
-    this.angleSpeed = this.dna.genes[2] * TWO_PI;
+    var agility = this.dna.genes[1];
+    this.speed = Math.floor(agility * cfg.agilitySpeedCoefficient);
+    this.angleSpeed = agility * cfg.agilityAngleCoefficient;
+    var obsRangeGene = this.dna.genes[2] != null ? this.dna.genes[2] : 0.5;
+    this.raycastLength = Math.max(50, obsRangeGene * (cfg.observationRangeCoefficient || 300));
     this.hp = Math.floor(this.dna.genes[0] * cfg.hpCoefficient);
     this.angle = random(TWO_PI);
+    if (typeof BEHAVIOUR_NETWORK !== 'undefined' && BEHAVIOUR_NETWORK.createNetwork) {
+        if (parentNetwork && parentNetwork.toJSON) {
+            try {
+                this.network = BEHAVIOUR_NETWORK.createFromParent(parentNetwork.toJSON());
+            } catch (e) {
+                this.network = BEHAVIOUR_NETWORK.createNetwork();
+            }
+        } else {
+            this.network = BEHAVIOUR_NETWORK.createNetwork();
+        }
+    } else {
+        this.network = null;
+    }
 }
 
 WorkerIndividual.prototype.update = function (dt) {
-    this.angle += random(-this.angleSpeed * dt, this.angleSpeed * dt);
-    this.position.x += Math.cos(this.angle) * this.speed * dt;
-    this.position.y += Math.sin(this.angle) * this.speed * dt;
+    var deltaAngle = 0;
+    if (this.network && typeof BEHAVIOUR_NETWORK !== 'undefined' && this.raycastResults) {
+        var input = BEHAVIOUR_NETWORK.raycastToInput(this.raycastResults);
+        var out = BEHAVIOUR_NETWORK.activate(this.network, input);
+        var speedMult = 0.5 + (out[0] || 0.5);
+        deltaAngle = (out[1] || 0) * this.angleSpeed * dt;
+        this.position.x += Math.cos(this.angle) * this.speed * speedMult * dt;
+        this.position.y += Math.sin(this.angle) * this.speed * speedMult * dt;
+    } else {
+        deltaAngle = random(-this.angleSpeed * dt, this.angleSpeed * dt);
+        this.position.x += Math.cos(this.angle) * this.speed * dt;
+        this.position.y += Math.sin(this.angle) * this.speed * dt;
+    }
+    this.angle += deltaAngle;
     var w = cst.mapWidth;
     var h = cst.mapHeight;
     var r = this.size / 2;
@@ -71,6 +101,8 @@ WorkerIndividual.prototype.update = function (dt) {
         this.angle = -this.angle;
     }
     this.hp -= this.dna.genes[0] * cfg.costCoefficient * dt;
+    var obsCost = (cfg.observationCostCoefficient || 0.5) * (this.raycastLength / 150) * dt;
+    this.hp -= obsCost;
 };
 
 WorkerIndividual.prototype.toDrawable = function () {
@@ -81,10 +113,14 @@ WorkerIndividual.prototype.toDrawable = function () {
         size: this.size,
         r: g[0] * 255,
         g: g[1] * 255,
-        b: g[2] * 255,
+        b: (g[2] != null ? g[2] : 0.5) * 255,
         a: this.hp,
         genes: g.slice(0),
-        hp: this.hp
+        hp: this.hp,
+        raycastResults: this.raycastResults || [],
+        raycastLength: this.raycastLength,
+        angle: this.angle,
+        networkJSON: this.network && this.network.toJSON ? this.network.toJSON() : null
     };
 };
 
@@ -94,7 +130,8 @@ WorkerIndividual.prototype.reproduce = function (dt) {
         childDNA.mutate();
         return new WorkerIndividual(
             vec2(random(cst.mapWidth), random(cst.mapHeight)),
-            childDNA
+            childDNA,
+            this.network
         );
     }
     return null;
@@ -115,97 +152,129 @@ function WorkerPopulation(populationSize) {
     }
 }
 
+WorkerPopulation.prototype.buildSpatialIndex = function (individuals) {
+    var mode = (cfg.spatialIndex === 'quadtree' || cfg.spatialIndex === 'spatialhash') ? cfg.spatialIndex : 'none';
+    if (mode === 'quadtree' && typeof QT !== 'undefined') {
+        var box = new QT.Box(0, 0, cst.mapWidth, cst.mapHeight);
+        var qt = new QT.QuadTree(box);
+        for (var i = 0; i < individuals.length; i++) {
+            var ind = individuals[i];
+            qt.insert(new QT.Point(ind.position.x, ind.position.y, { agent: ind }));
+        }
+        return { mode: 'quadtree', qt: qt };
+    }
+    if (mode === 'spatialhash') {
+        var cellSize = 80;
+        for (var i = 0; i < individuals.length; i++) {
+            var s = individuals[i].size / 2;
+            if (s > cellSize / 2) cellSize = Math.ceil(s * 2);
+        }
+        var hash = new SpatialHash(Math.max(cellSize, 50));
+        for (var i = 0; i < individuals.length; i++) {
+            individuals[i]._id = i;
+            hash.insert(individuals[i]);
+        }
+        return { mode: 'spatialhash', hash: hash };
+    }
+    return { mode: 'none' };
+};
+
+WorkerPopulation.prototype.queryNearbyAgents = function (x, y, r, index) {
+    if (!index || index.mode === 'none') return this.individuals;
+    if (index.mode === 'quadtree' && index.qt) {
+        var pts = index.qt.query(new QT.Circle(x, y, r));
+        var out = [];
+        for (var i = 0; i < pts.length; i++) {
+            if (pts[i].data && pts[i].data.agent) out.push(pts[i].data.agent);
+        }
+        return out;
+    }
+    if (index.mode === 'spatialhash' && index.hash) {
+        return index.hash.queryCircle(x, y, r);
+    }
+    return this.individuals;
+};
+
 WorkerPopulation.prototype.run = function (dt) {
-    this.individuals = this.eat(this.individuals);
-    for (var i = this.individuals.length - 1; i >= 0; i--) {
-        this.individuals[i].run(dt);
-        var child = this.individuals[i].reproduce(dt);
+    var individuals = this.individuals;
+    var index = this.buildSpatialIndex(individuals);
+    this.individuals = this.eatWithIndex(individuals, index);
+    individuals = this.individuals;
+    for (var i = individuals.length - 1; i >= 0; i--) {
+        var agent = individuals[i];
+        var len = agent.raycastLength || 150;
+        var candidates = this.queryNearbyAgents(agent.position.x, agent.position.y, len, index);
+        if (typeof RAYCAST !== 'undefined' && RAYCAST.cast8) {
+            agent.raycastResults = RAYCAST.cast8(
+                agent.position, agent.angle, len, cst.mapWidth, cst.mapHeight, candidates, agent
+            );
+        } else {
+            agent.raycastResults = [];
+        }
+        agent.run(dt);
+        var child = agent.reproduce(dt);
         if (child != null) this.individuals.push(child);
-        if (this.individuals[i].dead()) {
+        if (agent.dead()) {
             this.individuals.splice(i, 1);
         }
     }
 };
 
+function applyEat(eater, prey, toRemove) {
+    if (dist(eater.position, prey.position) < eater.size / 2 &&
+            eater.size > prey.size * cfg.compareCoefficient) {
+        eater.hp += Math.floor(prey.hp * cfg.eatCoefficient);
+        toRemove.push(prey);
+    }
+}
+
 WorkerPopulation.prototype.eatBruteForce = function (individuals) {
     var toRemove = [];
     for (var i = individuals.length - 1; i >= 0; i--) {
         for (var j = individuals.length - 1; j >= 0; j--) {
-            if (j !== i) {
-                var d = dist(individuals[i].position, individuals[j].position);
-                if (
-                    d < individuals[i].size / 2 &&
-                    individuals[i].size > individuals[j].size * cfg.compareCoefficient
-                ) {
-                    individuals[i].hp += Math.floor(individuals[j].hp * cfg.eatCoefficient);
-                    toRemove.push(individuals[j]);
-                }
-            }
+            if (j !== i) applyEat(individuals[i], individuals[j], toRemove);
         }
     }
     return individuals.filter(function (agent) { return toRemove.indexOf(agent) === -1; });
 };
 
-WorkerPopulation.prototype.eatQuadtree = function (individuals) {
+WorkerPopulation.prototype.eatWithIndex = function (individuals, index) {
+    if (!index || index.mode === 'none') return this.eatBruteForce(individuals);
+    if (index.mode === 'quadtree' && index.qt) return this.eatQuadtreeWithIndex(individuals, index.qt);
+    if (index.mode === 'spatialhash' && index.hash) return this.eatSpatialHashWithIndex(individuals, index.hash);
+    return this.eatBruteForce(individuals);
+};
+
+WorkerPopulation.prototype.eatQuadtreeWithIndex = function (individuals, qt) {
     if (individuals.length === 0) return individuals;
-    if (typeof QT === 'undefined') return this.eatBruteForce(individuals);
     var toRemove = [];
-    var box = new QT.Box(0, 0, cst.mapWidth, cst.mapHeight);
-    var qt = new QT.QuadTree(box);
-    for (var i = 0; i < individuals.length; i++) {
-        var ind = individuals[i];
-        qt.insert(new QT.Point(ind.position.x, ind.position.y, { agent: ind }));
-    }
     for (var i = 0; i < individuals.length; i++) {
         var a = individuals[i];
-        var r = a.size / 2;
-        var nearby = qt.query(new QT.Circle(a.position.x, a.position.y, r));
+        var nearby = qt.query(new QT.Circle(a.position.x, a.position.y, a.size / 2));
         for (var n = 0; n < nearby.length; n++) {
             var other = nearby[n].data && nearby[n].data.agent;
-            if (!other || other === a) continue;
-            if (dist(a.position, other.position) < r && a.size > other.size * cfg.compareCoefficient) {
-                a.hp += Math.floor(other.hp * cfg.eatCoefficient);
-                toRemove.push(other);
-            }
+            if (other && other !== a) applyEat(a, other, toRemove);
         }
     }
     return individuals.filter(function (agent) { return toRemove.indexOf(agent) === -1; });
 };
 
-WorkerPopulation.prototype.eatSpatialHash = function (individuals) {
+WorkerPopulation.prototype.eatSpatialHashWithIndex = function (individuals, hash) {
     if (individuals.length === 0) return individuals;
-    var cellSize = 80;
-    for (var i = 0; i < individuals.length; i++) {
-        var s = individuals[i].size / 2;
-        if (s > cellSize / 2) cellSize = Math.ceil(s * 2);
-    }
-    var hash = new SpatialHash(cellSize);
-    for (var i = 0; i < individuals.length; i++) {
-        individuals[i]._id = i;
-        hash.insert(individuals[i]);
-    }
     var toRemove = [];
     for (var i = 0; i < individuals.length; i++) {
         var a = individuals[i];
-        var r = a.size / 2;
-        var nearby = hash.queryCircle(a.position.x, a.position.y, r);
+        var nearby = hash.queryCircle(a.position.x, a.position.y, a.size / 2);
         for (var n = 0; n < nearby.length; n++) {
-            var other = nearby[n];
-            if (other === a) continue;
-            if (dist(a.position, other.position) < r && a.size > other.size * cfg.compareCoefficient) {
-                a.hp += Math.floor(other.hp * cfg.eatCoefficient);
-                toRemove.push(other);
-            }
+            if (nearby[n] !== a) applyEat(a, nearby[n], toRemove);
         }
     }
     return individuals.filter(function (agent) { return toRemove.indexOf(agent) === -1; });
 };
 
 WorkerPopulation.prototype.eat = function (individuals) {
-    var mode = (cfg.spatialIndex === 'quadtree' || cfg.spatialIndex === 'spatialhash') ? cfg.spatialIndex : 'none';
-    if (mode === 'quadtree') return this.eatQuadtree(individuals);
-    if (mode === 'spatialhash') return this.eatSpatialHash(individuals);
-    return this.eatBruteForce(individuals);
+    var index = this.buildSpatialIndex(individuals);
+    return this.eatWithIndex(individuals, index);
 };
 
 function applyConfigAndConstants(msg) {
@@ -216,17 +285,20 @@ function applyConfigAndConstants(msg) {
         cfg.reproductionRate = msg.config.reproductionRate;
         cfg.initialPopulation = msg.config.initialPopulation;
         cfg.sizeCoefficient = msg.config.sizeCoefficient;
-        cfg.speedCoefficient = msg.config.speedCoefficient;
+        cfg.agilitySpeedCoefficient = msg.config.agilitySpeedCoefficient;
+        cfg.agilityAngleCoefficient = msg.config.agilityAngleCoefficient;
         cfg.hpCoefficient = msg.config.hpCoefficient;
         cfg.eatCoefficient = msg.config.eatCoefficient;
         cfg.compareCoefficient = msg.config.compareCoefficient;
         cfg.costCoefficient = msg.config.costCoefficient;
+        cfg.observationRangeCoefficient = msg.config.observationRangeCoefficient;
+        cfg.observationCostCoefficient = msg.config.observationCostCoefficient;
         if (msg.config.spatialIndex !== undefined) cfg.spatialIndex = msg.config.spatialIndex;
     }
     if (msg.constants) {
         cst.minSize = msg.constants.minSize;
-        cst.minSpeed = msg.constants.minSpeed;
-        cst.minAngleSpeed = msg.constants.minAngleSpeed;
+        cst.minAgility = msg.constants.minAgility;
+        cst.minObservationRange = msg.constants.minObservationRange;
     }
     if (typeof msg.canvasWidth === 'number') cst.canvasWidth = msg.canvasWidth;
     if (typeof msg.canvasHeight === 'number') cst.canvasHeight = msg.canvasHeight;

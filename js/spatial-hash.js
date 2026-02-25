@@ -54,8 +54,10 @@ SpatialHash.prototype.queryCircle = function (x, y, r) {
             if (!list) continue;
             for (var i = 0; i < list.length; i++) {
                 var a = list[i];
-                var id = a.id != null ? a.id : a;
-                if (!seen[id]) {
+                var id = a._id;
+                if (id == null) {
+                    out.push(a);
+                } else if (!seen[id]) {
                     seen[id] = true;
                     out.push(a);
                 }

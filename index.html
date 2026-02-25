@@ -15,6 +15,10 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
         crossorigin="anonymous" referrerpolicy="no-referrer" />
     <script src="https://pixijs.download/v7.4.3/pixi.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/neataptic/1.4.7/neataptic.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/webcola@3.4.0/WebCola/cola.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/wagenaartje/neataptic@master/graph/graph.css" />
     <script src="js/math-utils.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/luxon/3.0.1/luxon.min.js"></script>
@@ -25,11 +29,9 @@
     <script src="js/sab-layout.js"></script>
     <script src="js/config.js"></script>
     <script src="js/controls.js"></script>
-    <script src="js/dna.js"></script>
-    <script src="js/individual.js"></script>
-    <script src="js/population.js"></script>
     <script src="js/renderer.js"></script>
     <script src="js/charts.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/wagenaartje/neataptic@master/graph/graph.js"></script>
     <script src="main.js"></script>
 </head>
 
@@ -52,6 +54,8 @@
                 <input type="range" min="0" max="10" step="0.1" value="5" class="slider" id="simSlider"
                     aria-label="Simulation speed" />
             </div>
+            <button type="button" id="playPauseBtn" title="Play/Pause (Space)" aria-label="Pause simulation"><i
+                    class="fa-solid fa-pause" aria-hidden="true"></i></button>
             <button type="button" id="restartBtn">Restart</button>
         </div>
     </header>
@@ -61,7 +65,8 @@
             <div class="canvas-wrap">
                 <div class="canvas-tools">
                     <button type="button" id="panBtn" class="canvas-tool" title="Pan mode: drag to move view"
-                        aria-label="Pan mode" aria-pressed="false"><i class="fa-solid fa-hand" aria-hidden="true"></i></button>
+                        aria-label="Pan mode" aria-pressed="false"><i class="fa-solid fa-hand"
+                            aria-hidden="true"></i></button>
                 </div>
                 <div id="canvasParent"></div>
                 <div id="minimapContainer" class="minimap-container"></div>
@@ -74,16 +79,18 @@
                     <div id="geneCharts" class="chart-area chart-area--genes">
                         <div class="chart-area__gene"><canvas id="sizeChart" class="geneChart"
                                 aria-label="Size gene over time"></canvas></div>
-                        <div class="chart-area__gene"><canvas id="speedChart" class="geneChart"
-                                aria-label="Speed gene over time"></canvas></div>
-                        <div class="chart-area__gene"><canvas id="angularSpeedChart" class="geneChart"
-                                aria-label="Angular speed gene over time"></canvas></div>
+                        <div class="chart-area__gene"><canvas id="agilityChart" class="geneChart"
+                                aria-label="Agility gene over time"></canvas></div>
+                        <div class="chart-area__gene"><canvas id="obsRangeChart" class="geneChart"
+                                aria-label="Observation range gene over time"></canvas></div>
                     </div>
                 </div>
             </div>
         </main>
 
         <aside id="detailsDrawer" class="details-drawer" aria-label="Details">
+            <div class="details-drawer__resize-handle" id="detailsDrawerResize" title="Drag to resize"
+                aria-label="Resize drawer"></div>
             <button type="button" class="details-drawer__toggle" id="detailsDrawerToggle" aria-expanded="true"
                 aria-controls="detailsDrawerContent" title="Hide details panel">Details</button>
             <div id="detailsDrawerContent" class="details-drawer__content">
@@ -176,6 +183,23 @@
                     </div>
                 </div>
                 <div class="details-drawer__section">
+                    <h2 class="details-drawer__heading">UI</h2>
+                    <p class="details-drawer__hint">How often charts and stats sample the simulation timeline.</p>
+                    <div class="param-row">
+                        <span class="param-label-cell">
+                            <label for="statsTick">Stats tick (s)</label>
+                            <span class="info-trigger" tabindex="0" role="button"
+                                aria-label="Stats tick rate description"><span class="info-icon"
+                                    aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Seconds of
+                                    simulated time between chart/stat samples. Higher = fewer points and lighter
+                                    charts; lower = more detailed but heavier.</span></span>
+                        </span>
+                        <span id="statsTickSpan" class="value"></span>
+                        <input type="range" min="0.25" max="10" step="0.25" value="1" class="slider" id="statsTick"
+                            aria-describedby="statsTickSpan" />
+                    </div>
+                </div>
+                <div class="details-drawer__section">
                     <h2 class="details-drawer__heading">Coefficients</h2>
                     <p class="details-drawer__hint">Map genes to world: size, HP, eating, cost, speed.</p>
                     <div class="param-row">
@@ -245,41 +269,75 @@
                     </div>
                     <div class="param-row">
                         <span class="param-label-cell">
-                            <label for="speedC">Speed coef.</label>
+                            <label for="speedC">Agility (speed)</label>
                             <span class="info-trigger" tabindex="0" role="button"
-                                aria-label="Speed coefficient description"><span class="info-icon"
+                                aria-label="Agility speed coefficient description"><span class="info-icon"
                                     aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Multiplier
-                                    for the speed gene → movement speed. Higher = speed gene has more impact; shapes the
-                                    size–speed tradeoff with cost.</span></span>
+                                    for the agility gene → movement speed. Higher agility = faster
+                                    movement.</span></span>
                         </span>
                         <span id="speedCSpan" class="value"></span>
                         <input type="range" min="450" max="550" value="500" class="slider" id="speedC"
                             aria-describedby="speedCSpan" />
                     </div>
+                    <div class="param-row">
+                        <span class="param-label-cell">
+                            <label for="obsRangeC">Obs. range coef.</label>
+                            <span class="info-trigger" tabindex="0" role="button"
+                                aria-label="Observation range coefficient description"><span class="info-icon"
+                                    aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Multiplier
+                                    for the observation range gene → raycast length in pixels. Higher = agents can see
+                                    farther (but pay more energy cost).</span></span>
+                        </span>
+                        <span id="obsRangeCSpan" class="value"></span>
+                        <input type="range" min="50" max="500" step="10" value="300" class="slider" id="obsRangeC"
+                            aria-describedby="obsRangeCSpan" />
+                    </div>
+                    <div class="param-row">
+                        <span class="param-label-cell">
+                            <label for="obsCost">Obs. cost</label>
+                            <span class="info-trigger" tabindex="0" role="button"
+                                aria-label="Observation cost description"><span class="info-icon"
+                                    aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Energy
+                                    drain per timestep for observation = obsCost × (raycastLength/150) × dt. Higher =
+                                    longer range costs more HP.</span></span>
+                        </span>
+                        <span id="obsCostSpan" class="value"></span>
+                        <input type="range" min="0.1" max="2" step="0.1" value="0.5" class="slider" id="obsCost"
+                            aria-describedby="obsCostSpan" />
+                    </div>
+                    <div class="param-row">
+                        <span class="param-label-cell">
+                            <label for="angleC">Agility (angle)</label>
+                            <span class="info-trigger" tabindex="0" role="button"
+                                aria-label="Agility angle coefficient description"><span class="info-icon"
+                                    aria-hidden="true">i</span><span class="tooltip-dropdown" role="tooltip">Multiplier
+                                    for the agility gene → turn rate (radians per timestep). Higher = quicker
+                                    turning.</span></span>
+                        </span>
+                        <span id="angleCSpan" class="value"></span>
+                        <input type="range" min="1" max="8" step="0.1" value="6.28" class="slider" id="angleC"
+                            aria-describedby="angleCSpan" />
+                    </div>
                 </div>
                 <div class="details-drawer__section details-drawer__section--inspector">
                     <h2 class="details-drawer__heading">Inspector</h2>
-                    <p class="details-drawer__hint">Hover over an individual on the canvas to see its genes.</p>
+                    <p class="details-drawer__hint">Hover over an individual on the canvas to see its genes, status,
+                        raycast detections, and network.</p>
                     <div id="inspectorContent" class="inspector-content" aria-live="polite">
                         <p class="inspector-placeholder">Hover over an individual</p>
+                    </div>
+                    <div id="inspectorNetworkWrap" class="inspector-network-wrap" style="display:none;">
+                        <h3 class="inspector-network-heading">Behaviour network</h3>
+                        <p id="inspectorNetworkStatus" class="inspector-network-status" aria-live="polite"></p>
+                        <svg id="inspectorNetwork" class="inspector-network-svg" width="320" height="200"
+                            aria-label="Neural network graph"></svg>
                     </div>
                 </div>
             </div>
         </aside>
     </div>
-    <script>
-        (function () {
-            var drawer = document.getElementById('detailsDrawer');
-            var toggle = document.getElementById('detailsDrawerToggle');
-            if (drawer && toggle) {
-                toggle.addEventListener('click', function () {
-                    var collapsed = drawer.classList.toggle('details-drawer--collapsed');
-                    toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-                    toggle.title = collapsed ? 'Show details panel' : 'Hide details panel';
-                });
-            }
-        })();
-    </script>
+    <script src="js/drawer.js"></script>
 </body>
 
 </html>
