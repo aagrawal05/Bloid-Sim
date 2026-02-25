@@ -8,7 +8,7 @@
 
     var Architect = neataptic.architect;
     var Network = neataptic.Network;
-    var Methods = neataptic.methods || { mutation: {} };
+    var Methods = neataptic.methods;
 
     var INPUTS = 16;
     var OUTPUTS = 2;
@@ -17,18 +17,19 @@
         return new Architect.Perceptron(INPUTS, 8, 8, OUTPUTS);
     }
 
-    function createFromParent(parentJSON) {
-        var net = Network.fromJSON(parentJSON);
-        try {
-            if (Methods.mutation && Methods.mutation.ALL) {
-                net.mutate(Methods.mutation.ALL);
-            } else {
-                net.mutate();
-            }
-        } catch (e) {
-            net.mutate();
-        }
+    function mutateNetwork(net) {
+        var randomMethodIdx = Math.floor(Math.random() * Methods.mutation.ALL.length);
+        var randomMethod = Methods.mutation.ALL[randomMethodIdx];
+        net.mutate(randomMethod);
         return net;
+    }
+
+    function createNetworkFromParent(parentNetwork) {
+        if (!parentNetwork) {
+            return createNetwork();
+        }
+        var childJSON = parentNetwork.toJSON();
+        return Network.fromJSON(childJSON);
     }
 
     function raycastToInput(raycastResults) {
@@ -54,11 +55,12 @@
     }
 
     var _target = (typeof self !== 'undefined' && self.document === undefined) ? self
-                : (typeof window !== 'undefined') ? window
-                : this;
+        : (typeof window !== 'undefined') ? window
+            : this;
     _target.BEHAVIOUR_NETWORK = {
         createNetwork: createNetwork,
-        createFromParent: createFromParent,
+        createNetworkFromParent: createNetworkFromParent,
+        mutateNetwork: mutateNetwork,
         raycastToInput: raycastToInput,
         activate: activate
     };

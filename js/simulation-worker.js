@@ -40,9 +40,14 @@ WorkerDNA.prototype.mutate = function () {
     }
 };
 
-function WorkerIndividual(initialPosition, dna, parentNetwork) {
+function WorkerIndividual(initialPosition, dna, network) {
     this.position = initialPosition;
     this.dna = dna != null ? dna : new WorkerDNA();
+    if (typeof BEHAVIOUR_NETWORK === 'undefined') {
+        this.network = null;
+    } else {
+        this.network = network != null ? network : BEHAVIOUR_NETWORK.createNetwork();
+    }
     this.size = Math.floor(this.dna.genes[0] * cfg.sizeCoefficient);
     var agility = this.dna.genes[1];
     this.speed = Math.floor(agility * cfg.agilitySpeedCoefficient);
@@ -51,19 +56,6 @@ function WorkerIndividual(initialPosition, dna, parentNetwork) {
     this.raycastLength = Math.max(50, obsRangeGene * (cfg.observationRangeCoefficient || 300));
     this.hp = Math.floor(this.dna.genes[0] * cfg.hpCoefficient);
     this.angle = random(TWO_PI);
-    if (typeof BEHAVIOUR_NETWORK !== 'undefined' && BEHAVIOUR_NETWORK.createNetwork) {
-        if (parentNetwork && parentNetwork.toJSON) {
-            try {
-                this.network = BEHAVIOUR_NETWORK.createFromParent(parentNetwork.toJSON());
-            } catch (e) {
-                this.network = BEHAVIOUR_NETWORK.createNetwork();
-            }
-        } else {
-            this.network = BEHAVIOUR_NETWORK.createNetwork();
-        }
-    } else {
-        this.network = null;
-    }
 }
 
 WorkerIndividual.prototype.update = function (dt) {
@@ -128,10 +120,17 @@ WorkerIndividual.prototype.reproduce = function (dt) {
     if (random() < cfg.reproductionRate * dt) {
         var childDNA = new WorkerDNA(JSON.parse(JSON.stringify(this.dna.genes)));
         childDNA.mutate();
+        var childNetwork = null;
+        if (typeof BEHAVIOUR_NETWORK !== 'undefined') {
+            var childNetwork = BEHAVIOUR_NETWORK.createNetworkFromParent(this.network);
+            if (random() < cfg.mutationRate) {
+                BEHAVIOUR_NETWORK.mutateNetwork(childNetwork);
+            }
+        }
         return new WorkerIndividual(
             vec2(random(cst.mapWidth), random(cst.mapHeight)),
             childDNA,
-            this.network
+            childNetwork
         );
     }
     return null;
@@ -222,7 +221,7 @@ WorkerPopulation.prototype.run = function (dt) {
 
 function applyEat(eater, prey, toRemove) {
     if (dist(eater.position, prey.position) < eater.size / 2 &&
-            eater.size > prey.size * cfg.compareCoefficient) {
+        eater.size > prey.size * cfg.compareCoefficient) {
         eater.hp += Math.floor(prey.hp * cfg.eatCoefficient);
         toRemove.push(prey);
     }
