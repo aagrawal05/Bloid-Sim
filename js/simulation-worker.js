@@ -16,6 +16,8 @@ var population = null;
 var sab = null;
 var sabLayout = null;
 
+var _nextAgentId = 1;
+
 function WorkerDNA(inheritedGenes) {
     if (inheritedGenes != null) {
         this.genes = inheritedGenes;
@@ -41,6 +43,7 @@ WorkerDNA.prototype.mutate = function () {
 };
 
 function WorkerIndividual(initialPosition, dna, network) {
+    this.id = _nextAgentId++;
     this.position = initialPosition;
     this.dna = dna != null ? dna : new WorkerDNA();
     if (typeof BEHAVIOUR_NETWORK === 'undefined') {
@@ -100,6 +103,7 @@ WorkerIndividual.prototype.update = function (dt) {
 WorkerIndividual.prototype.toDrawable = function () {
     var g = this.dna.genes;
     return {
+        id: this.id,
         x: this.position.x,
         y: this.position.y,
         size: this.size,
@@ -295,6 +299,7 @@ function writeStateToSAB() {
         f32[base + F.GENE_1] = d.genes[1];
         f32[base + F.GENE_2] = d.genes[2];
         f32[base + F.HP] = d.hp;
+        f32[base + F.ID] = d.id;
     }
     Atomics.store(i32, 0, writeIdx);
 }

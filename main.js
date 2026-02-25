@@ -112,6 +112,7 @@ function readStateFromSAB() {
         var genes = [f32[base + F.GENE_0], f32[base + F.GENE_1], f32[base + F.GENE_2]];
         var hp = f32[base + F.HP];
         out.push({
+            id: f32[base + F.ID],
             x: f32[base + F.X],
             y: f32[base + F.Y],
             size: f32[base + F.SIZE],
@@ -218,7 +219,7 @@ function init() {
 
 function restart() {
     lastHoveredIndex = null;
-    if (window.app) window.app.lockedWorldPos = null;
+    if (window.app) clearLock();
     Inspector.update(null);
     if (simulationWorker) {
         var dims = getCanvasDimensions();
@@ -253,6 +254,26 @@ function buildInspectorData(d) {
         raycastResults: d.raycastResults,
         networkJSON: d.networkJSON
     };
+}
+
+// lock helpers
+function setLock(idx) {
+    var ind = window.app.currentIndividuals[idx];
+    window.app.lockedId = ind.id;
+    window.app.lockedIndex = idx;
+    window.app.lockedWorldPos = { x: ind.x, y: ind.y };
+    lastHoveredIndex = idx;
+    Renderer.setHovered(idx);
+    Inspector.update(buildInspectorData(ind));
+}
+
+function clearLock() {
+    window.app.lockedId = null;
+    window.app.lockedIndex = null;
+    window.app.lockedWorldPos = null;
+    lastHoveredIndex = null;
+    Renderer.setHovered(null);
+    Inspector.update(null);
 }
 
 // Lightweight grid for O(1) amortized hover detection
@@ -302,36 +323,32 @@ function findIndividualAt(worldX, worldY) {
     return null;
 }
 
-function findLockedIndividual() {
-    if (!window.app || !window.app.lockedWorldPos) return null;
-    var individuals = window.app.currentIndividuals;
-    var lp = window.app.lockedWorldPos;
-    var bestIdx = null;
-    var bestDist = Infinity;
-    var maxRadius = 150;
-    for (var i = 0; i < individuals.length; i++) {
-        var d = individuals[i];
-        var d2 = dist(lp, { x: d.x, y: d.y });
-        if (d2 < bestDist && d2 < maxRadius) {
-            bestDist = d2;
-            bestIdx = i;
-        }
-    }
-    return bestIdx;
-}
 
 function updateLockedHighlight() {
-    if (!window.app || !window.app.lockedWorldPos) return;
-    var idx = findLockedIndividual();
-    if (idx == null) {
-        window.app.lockedWorldPos = null;
-        lastHoveredIndex = null;
-        Renderer.setHovered(null);
-        Inspector.update(null);
-        return;
-    }
+    // follow lockedId; cache index if needed
+    if (!window.app || window.app.lockedId == null) return;
     var individuals = window.app.currentIndividuals;
-    var d = individuals[idx];
+    var idx = window.app.lockedIndex;
+    var d;
+
+    if (typeof idx === 'number' && idx >= 0 && idx < individuals.length &&
+        individuals[idx].id === window.app.lockedId) {
+        d = individuals[idx];
+    } else {
+        idx = null;
+        for (var i = 0; i < individuals.length; i++) {
+            if (individuals[i].id === window.app.lockedId) {
+                idx = i;
+                break;
+            }
+        }
+        if (idx == null) {
+            clearLock();
+            return;
+        }
+        d = individuals[idx];
+        window.app.lockedIndex = idx;
+    }
     window.app.lockedWorldPos = { x: d.x, y: d.y };
 
     // Center the camera on the locked individual
@@ -355,7 +372,7 @@ function updateLockedHighlight() {
 }
 
 function hoverCheck() {
-    if (window.app.lockedWorldPos) return; // lock tracking handled by updateLockedHighlight
+    if (window.app.lockedId != null) return;
     var foundIndex = null;
     if (_worldMouseX != null && _worldMouseY != null) {
         foundIndex = findIndividualAt(_worldMouseX, _worldMouseY);
@@ -472,6 +489,8 @@ window.app = {
     paused: false,
     currentIndividuals: [],
     lockedWorldPos: null,
+    lockedId: null,
+    lockedIndex: null,
     panMode: false,
     zoomMode: false,
     _panStart: null,
@@ -518,37 +537,25 @@ window.app = {
         var worldY = _worldMouseY;
         if (worldX == null || worldY == null) return;
         var idx = findIndividualAt(worldX, worldY);
-        if (window.app.lockedWorldPos) {
-            var lockedIdx = findLockedIndividual();
-            if (idx != null && idx === lockedIdx) {
-                window.app.lockedWorldPos = null;
+        if (window.app.lockedId != null) {
+            if (idx != null && idx === window.app.lockedIndex) {
+                clearLock();
                 lastHoveredIndex = idx;
                 hoverCheck();
             } else if (idx != null) {
-                var ind = window.app.currentIndividuals[idx];
-                window.app.lockedWorldPos = { x: ind.x, y: ind.y };
-                lastHoveredIndex = idx;
-                Renderer.setHovered(idx);
-                Inspector.update(buildInspectorData(ind));
+                setLock(idx);
             } else {
-                window.app.lockedWorldPos = null;
-                lastHoveredIndex = null;
-                Renderer.setHovered(null);
-                Inspector.update(null);
+                clearLock();
             }
         } else if (idx != null) {
-            var ind = window.app.currentIndividuals[idx];
-            window.app.lockedWorldPos = { x: ind.x, y: ind.y };
-            lastHoveredIndex = idx;
-            Renderer.setHovered(idx);
-            Inspector.update(buildInspectorData(ind));
+            setLock(idx);
         }
     },
     _onMouseLeave: function () {
         _worldMouseX = null;
         _worldMouseY = null;
         window.app._panStart = null;
-        if (!window.app.lockedWorldPos) {
+        if (window.app.lockedId == null) {
             Renderer.setHovered(null);
             Inspector.update(null);
             lastHoveredIndex = null;
@@ -556,7 +563,7 @@ window.app = {
     },
     _minimapLoop: function () {
         // When paused nothing moves — skip camera tracking and inspector updates
-        if (window.app.lockedWorldPos && !window.app.paused) updateLockedHighlight();
+        if (window.app.lockedId != null && !window.app.paused) updateLockedHighlight();
         if (Minimap.canvas && Renderer.getViewport) {
             var vp = Renderer.getViewport();
             var zoom = Renderer.getZoom();
